@@ -1,0 +1,6 @@
+fetch:
+  - type: git
+    repo: "https://example.com/example.git"
+    ref: "v${VERSION}"
+    shallow: true
+    archive_name: "${PACKAGE}-${VERSION}.tar.gz"

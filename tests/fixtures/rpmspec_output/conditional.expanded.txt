@@ -1,0 +1,38 @@
+Name:           conditional
+Version:        3.1.0
+Release:        1.fc42
+Summary:        A test package with conditional sources
+License:        MIT
+URL:            https://example.com/conditional
+
+
+
+Source0:        https://example.com/conditional/conditional-3.1.0.tar.gz
+
+Source1:        https://example.com/conditional/bundled-deps.tar.gz
+
+
+%description
+A test package whose Source1 is only present when the "bundled" bcond is enabled.
+
+%prep
+cd '/home/shebert/rpmbuild/BUILD/conditional-3.1.0-build'
+rm -rf 'conditional-3.1.0'
+/usr/lib/rpm/rpmuncompress -x 'tests/fixtures/specs/conditional-3.1.0.tar.gz'
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+  exit $STATUS
+fi
+cd 'conditional-3.1.0'
+/usr/bin/chmod -Rf a+rX,u+w,g-w,o-w .
+
+
+%build
+
+%install
+
+%files
+
+%changelog
+* Mon Jan 01 2024 Test <test@example.com> - 3.1.0-1
+- Initial package

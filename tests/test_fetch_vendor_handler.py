@@ -1,0 +1,93 @@
+import tarfile
+from unittest.mock import Mock
+
+import pytest
+
+from gorget.config.schema import VendorModule, VendorStep
+from gorget.config.substitution import SubstitutionVars
+from gorget.exceptions import GorgetConfigError
+from gorget.fetch.base import FetchContext
+from gorget.fetch.vendor import VendorHandler
+
+
+def make_ctx(work_dir, source_dir=None, dry_run=False):
+    return FetchContext(
+        work_dir=work_dir,
+        package_dir=work_dir,
+        spec=Mock(),
+        vars=SubstitutionVars(
+            version="1.2.3", old_version=None, package="foo", spec_file="foo.spec"
+        ),
+        dry_run=dry_run,
+        source_dir=source_dir,
+    )
+
+
+def test_vendor_requires_a_preceding_source_dir(tmp_path):
+    step = VendorStep(ecosystem="go")
+    with pytest.raises(GorgetConfigError, match="preceding 'git' step"):
+        VendorHandler().run(step, make_ctx(tmp_path, source_dir=None))
+
+
+def test_vendor_single_module_produces_archive(tmp_path, mocker):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+
+    def fake_vendor(module_dir):
+        module_dir.mkdir(parents=True, exist_ok=True)
+        (module_dir / "go.sum").write_text("checksums")
+        vendor_dir = module_dir / "vendor"
+        vendor_dir.mkdir()
+        (vendor_dir / "modules.txt").write_text("example.com/x v1.0.0")
+        return vendor_dir
+
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+    )
+    step = VendorStep(ecosystem="go")
+    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+
+    assert artifacts[0].output_name == "foo-vendor.tar.gz"
+    with tarfile.open(artifacts[0].path) as tar:
+        names = tar.getnames()
+    assert any(name.endswith("modules.txt") for name in names)
+
+
+def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
+    source_dir = tmp_path / "etcd"
+    source_dir.mkdir()
+
+    def fake_vendor(module_dir):
+        module_dir.mkdir(parents=True, exist_ok=True)
+        vendor_dir = module_dir / "vendor"
+        vendor_dir.mkdir()
+        (vendor_dir / f"{module_dir.name}.txt").write_text("x")
+        return vendor_dir
+
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+    )
+    step = VendorStep(
+        ecosystem="go",
+        archive_name="etcd-vendor.tar.gz",
+        modules=[
+            VendorModule(path="server", name="server"),
+            VendorModule(path="etcdctl", name="etcdctl"),
+        ],
+    )
+    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+
+    assert artifacts[0].output_name == "etcd-vendor.tar.gz"
+    with tarfile.open(artifacts[0].path) as tar:
+        names = set(tar.getnames())
+    assert any(n.endswith("server/server.txt") for n in names)
+    assert any(n.endswith("etcdctl/etcdctl.txt") for n in names)
+
+
+def test_vendor_dry_run_skips_ecosystem_and_combine(tmp_path, mocker):
+    mock_vendor = Mock()
+    mocker.patch("gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
+    step = VendorStep(ecosystem="go")
+    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=tmp_path, dry_run=True))
+    mock_vendor.assert_not_called()
+    assert artifacts[0].checksum is None

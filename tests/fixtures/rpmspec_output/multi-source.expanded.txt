@@ -1,0 +1,35 @@
+Name:           multisource
+Version:        2.3.4
+Release:        1.fc42
+Summary:        A test package with multiple sources
+License:        MIT
+URL:            https://example.com/multisource
+Source0:        https://example.com/multisource/multisource-2.3.4.tar.gz
+Source1:        https://example.com/multisource/extra-data.tar.gz
+Source2:        https://example.com/multisource/patches.tar.gz
+Source3:        https://example.com/multisource/vendor-2.3.4.tar.gz
+
+%description
+A test package with several Source declarations, including macro-based URLs.
+
+%prep
+cd '/home/shebert/rpmbuild/BUILD/multisource-2.3.4-build'
+rm -rf 'multisource-2.3.4'
+/usr/lib/rpm/rpmuncompress -x 'tests/fixtures/specs/multisource-2.3.4.tar.gz'
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+  exit $STATUS
+fi
+cd 'multisource-2.3.4'
+/usr/bin/chmod -Rf a+rX,u+w,g-w,o-w .
+
+
+%build
+
+%install
+
+%files
+
+%changelog
+* Mon Jan 01 2024 Test <test@example.com> - 2.3.4-1
+- Initial package
