@@ -1,6 +1,6 @@
 # Gorget
 
-Gorget is a containerized source-pipeline tool for RPM package supply-chain
+**Gorget** is a containerized source-pipeline tool for RPM package supply-chain
 trust. It fetches upstream source tarballs directly from their origin (rather
 than an intermediate lookaside cache), applies transforms, verifies integrity,
 enforces dependency policy, and emits lookaside-ready artifacts.
