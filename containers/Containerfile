@@ -1,0 +1,3 @@
+# Placeholder. Building and publishing the real gorget container image is
+# tracked separately (HUM-4822); this repo currently only ships the `gorget`
+# Python package and CLI.

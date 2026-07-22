@@ -1,0 +1,42 @@
+"""`vendor` fetch step: generate dependency vendor archives for Go, npm, Cargo, and
+Composer ecosystems, combining multiple submodules (e.g. etcd) into one archive.
+"""
+
+from __future__ import annotations
+
+from gorget.config.schema import VendorStep
+from gorget.exceptions import GorgetConfigError
+from gorget.fetch.base import FetchContext, FetchedArtifact, build_artifact
+from gorget.fetch.vendor.base import VendorEcosystem
+from gorget.fetch.vendor.cargo import CargoVendor
+from gorget.fetch.vendor.combine import combine_vendor_archives
+from gorget.fetch.vendor.composer import ComposerVendor
+from gorget.fetch.vendor.go import GoVendor
+from gorget.fetch.vendor.npm import NpmVendor
+
+_ECOSYSTEMS: dict[str, VendorEcosystem] = {
+    "go": GoVendor(),
+    "npm": NpmVendor(),
+    "cargo": CargoVendor(),
+    "composer": ComposerVendor(),
+}
+
+
+class VendorHandler:
+    def run(self, step: VendorStep, ctx: FetchContext) -> list[FetchedArtifact]:
+        ecosystem = _ECOSYSTEMS[step.ecosystem]
+        archive_name = step.archive_name or f"{ctx.vars.package}-vendor.tar.gz"
+        archive_path = ctx.work_dir / archive_name
+
+        if not ctx.dry_run:
+            if ctx.source_dir is None:
+                raise GorgetConfigError(
+                    "A 'vendor' fetch step requires a preceding 'git' step in the same "
+                    "pipeline to establish a source checkout to vendor against"
+                )
+            module_outputs = [
+                (module, ecosystem.vendor(ctx.source_dir / module.path)) for module in step.modules
+            ]
+            combine_vendor_archives(module_outputs, archive_path)
+
+        return [build_artifact(archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run)]

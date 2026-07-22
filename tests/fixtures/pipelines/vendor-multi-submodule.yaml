@@ -1,0 +1,14 @@
+fetch:
+  - type: git
+    repo: "https://example.com/etcd.git"
+    ref: "v${VERSION}"
+  - type: vendor
+    ecosystem: go
+    archive_name: "${PACKAGE}-vendor.tar.gz"
+    modules:
+      - path: "server"
+        name: "server"
+      - path: "etcdctl"
+        name: "etcdctl"
+      - path: "etcdutl"
+        name: "etcdutl"
