@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+from gorget.constants import REPORT_FILENAME
 from gorget.fetch.base import FetchedArtifact, artifact_report_dict
 
 
 @dataclass(frozen=True, kw_only=True)
 class StageResult:
     name: str
-    status: str  # "success" | "skipped"
+    status: str  # "success" | "skipped" | "failed"
     reason: str | None = None
     # Per-check results (currently only Verify populates this) -- None for
     # every other stage, which only report at the whole-stage granularity.
@@ -46,3 +49,8 @@ class PipelineReport:
             "stages": [stage.to_dict() for stage in self.stages],
             "artifacts": [artifact_report_dict(artifact) for artifact in self.artifacts],
         }
+
+
+def write_report_json(output_dir: Path, report_dict: dict) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / REPORT_FILENAME).write_text(json.dumps(report_dict, indent=2) + "\n")

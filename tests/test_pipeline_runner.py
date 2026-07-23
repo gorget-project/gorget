@@ -99,9 +99,16 @@ def test_exception_from_a_stage_propagates_uncaught(tmp_path, mocker):
     mocker.patch("gorget.pipeline.runner.STAGE_ORDER", [*fake_order, ExplodingStage])
 
     ctx = make_ctx(tmp_path)
-    with pytest.raises(GorgetPolicyViolation, match="nope"):
+    with pytest.raises(GorgetPolicyViolation, match="nope") as exc_info:
         PipelineRunner(ctx, PipelineSpec()).run()
     assert calls == ["a"]
+
+    partial_report = exc_info.value.partial_report
+    assert partial_report is not None
+    assert [s.name for s in partial_report.stages] == ["a", "exploding"]
+    exploding_result = partial_report.stages[-1]
+    assert exploding_result.status == "failed"
+    assert exploding_result.reason == "nope"
 
 
 def test_toolchain_verified_before_any_stage_runs(tmp_path, mocker):
@@ -124,10 +131,15 @@ def test_toolchain_verified_before_any_stage_runs(tmp_path, mocker):
     spec = PipelineSpec(
         toolchain=ToolchainSection(entries=[ToolchainEntry(name="go", version="1.22.0")])
     )
-    with pytest.raises(GorgetConfigError, match="go@1.22.0"):
+    with pytest.raises(GorgetConfigError, match="go@1.22.0") as exc_info:
         PipelineRunner(ctx, spec).run()
 
     assert calls == []  # no stage ran
+
+    partial_report = exc_info.value.partial_report
+    assert partial_report is not None
+    assert [s.name for s in partial_report.stages] == ["toolchain"]
+    assert partial_report.stages[0].status == "failed"
 
 
 def test_toolchain_verified_even_under_dry_run(tmp_path, mocker):

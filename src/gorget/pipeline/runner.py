@@ -15,6 +15,7 @@ from pathlib import Path
 from gorget import toolchain
 from gorget.config.schema import PipelineSpec
 from gorget.context import RunContext
+from gorget.exceptions import GorgetError
 from gorget.pipeline.result import PipelineReport, StageResult
 from gorget.pipeline.stages.base import Stage
 from gorget.pipeline.stages.emit import EmitStage
@@ -36,11 +37,6 @@ class PipelineRunner:
         self.spec = spec
 
     def run(self) -> PipelineReport:
-        # Checked once, up front -- including under --dry-run, since it's a cheap,
-        # side-effect-free check consistent with "dry-run validates everything it
-        # can for free" (see fetch step handlers' own dry-run behavior).
-        toolchain.verify_installed(self.spec.toolchain.entries)
-
         report = PipelineReport(
             package=self.ctx.vars.package,
             version=self.ctx.vars.version,
@@ -48,20 +44,37 @@ class PipelineRunner:
             dry_run=self.ctx.dry_run,
         )
 
-        with tempfile.TemporaryDirectory(prefix="gorget-") as tmp_dir:
-            state = self._build_initial_state(Path(tmp_dir), report)
+        # Wrapped so a failure anywhere here (toolchain check or any stage)
+        # still leaves report.json writable -- cli.main() reads exc.partial_report
+        # off whatever gets raised, so report.json isn't silently lost on failure.
+        current_stage_name = "toolchain"
+        try:
+            # Checked once, up front -- including under --dry-run, since it's a
+            # cheap, side-effect-free check consistent with "dry-run validates
+            # everything it can for free" (see fetch step handlers' dry-run behavior).
+            toolchain.verify_installed(self.spec.toolchain.entries)
 
-            for stage_cls in STAGE_ORDER:
-                if stage_cls is EmitStage and self.ctx.dry_run:
-                    logger.debug("stage emit: skipped (dry-run)")
-                    report.stages.append(
-                        StageResult(name="emit", status="skipped", reason="dry-run")
-                    )
-                    continue
-                logger.debug("stage %s: starting", getattr(stage_cls, "name", stage_cls))
-                result = stage_cls().run(self.ctx, self.spec, state)
-                logger.debug("stage %s: %s", result.name, result.status)
-                report.stages.append(result)
+            with tempfile.TemporaryDirectory(prefix="gorget-") as tmp_dir:
+                state = self._build_initial_state(Path(tmp_dir), report)
+
+                for stage_cls in STAGE_ORDER:
+                    current_stage_name = getattr(stage_cls, "name", str(stage_cls))
+                    if stage_cls is EmitStage and self.ctx.dry_run:
+                        logger.debug("stage emit: skipped (dry-run)")
+                        report.stages.append(
+                            StageResult(name="emit", status="skipped", reason="dry-run")
+                        )
+                        continue
+                    logger.debug("stage %s: starting", current_stage_name)
+                    result = stage_cls().run(self.ctx, self.spec, state)
+                    logger.debug("stage %s: %s", result.name, result.status)
+                    report.stages.append(result)
+        except GorgetError as exc:
+            report.stages.append(
+                StageResult(name=current_stage_name, status="failed", reason=str(exc))
+            )
+            exc.partial_report = report
+            raise
 
         return report
 
