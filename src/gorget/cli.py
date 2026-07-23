@@ -12,6 +12,7 @@ from gorget.config.loader import build_pipeline_spec
 from gorget.config.schema import PipelineSpec, SpecSourceStep
 from gorget.context import RunContext, build_run_context
 from gorget.exceptions import GorgetError
+from gorget.pipeline.result import write_report_json
 from gorget.pipeline.runner import PipelineRunner
 
 
@@ -76,6 +77,18 @@ def main(argv: list[str] | None = None) -> int:
         pipeline_spec = resolve_pipeline_spec(ctx)
         report = PipelineRunner(ctx, pipeline_spec).run()
     except GorgetError as exc:
+        # partial_report is only ever set once ctx exists (PipelineRunner.run()
+        # needs one to run at all) -- errors raised before that (e.g. an
+        # invalid --package-dir) have none, so there's nothing to write yet.
+        partial_report = exc.partial_report
+        if partial_report is not None:
+            if ctx.dry_run:
+                print(json.dumps(partial_report.to_dict(), indent=2))
+            else:
+                try:
+                    write_report_json(ctx.output_dir, partial_report.to_dict())
+                except OSError as write_exc:
+                    print(f"warning: could not write report.json: {write_exc}", file=sys.stderr)
         print(f"error: {exc}", file=sys.stderr)
         return exc.exit_code
 
