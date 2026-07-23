@@ -1,0 +1,9 @@
+fetch:
+  - type: git
+    repo: "https://example.com/example.git"
+    ref: "v${VERSION}"
+transform:
+  - type: run
+    command: ["make", "generate"]
+    outputs:
+      - "generated/"

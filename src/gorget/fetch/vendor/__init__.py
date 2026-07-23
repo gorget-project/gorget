@@ -1,13 +1,17 @@
-"""`vendor` fetch step: generate dependency vendor archives for Go, npm, Cargo, and
+"""`vendor` step: generate dependency vendor archives for Go, npm, Cargo, and
 Composer ecosystems, combining multiple submodules (e.g. etcd) into one archive.
+
+Reused by both the Fetch stage's `vendor` step and the Transform stage's `vendor`
+step (see `fetch/vendor/base.py`'s `VendorRunContext` for why this isn't typed
+against the concrete `FetchContext`).
 """
 
 from __future__ import annotations
 
 from gorget.config.schema import VendorStep
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.base import FetchContext, FetchedArtifact, build_artifact
-from gorget.fetch.vendor.base import VendorEcosystem
+from gorget.fetch.base import FetchedArtifact, build_artifact
+from gorget.fetch.vendor.base import VendorEcosystem, VendorRunContext
 from gorget.fetch.vendor.cargo import CargoVendor
 from gorget.fetch.vendor.combine import combine_vendor_archives
 from gorget.fetch.vendor.composer import ComposerVendor
@@ -23,7 +27,7 @@ _ECOSYSTEMS: dict[str, VendorEcosystem] = {
 
 
 class VendorHandler:
-    def run(self, step: VendorStep, ctx: FetchContext) -> list[FetchedArtifact]:
+    def run(self, step: VendorStep, ctx: VendorRunContext) -> list[FetchedArtifact]:
         ecosystem = _ECOSYSTEMS[step.ecosystem]
         archive_name = step.archive_name or f"{ctx.vars.package}-vendor.tar.gz"
         archive_path = ctx.work_dir / archive_name
@@ -31,11 +35,12 @@ class VendorHandler:
         if not ctx.dry_run:
             if ctx.source_dir is None:
                 raise GorgetConfigError(
-                    "A 'vendor' fetch step requires a preceding 'git' step in the same "
+                    "A 'vendor' step requires a preceding 'git' step in the same "
                     "pipeline to establish a source checkout to vendor against"
                 )
             module_outputs = [
-                (module, ecosystem.vendor(ctx.source_dir / module.path)) for module in step.modules
+                (module, ecosystem.vendor(ctx.source_dir / module.path, ctx.toolchain))
+                for module in step.modules
             ]
             combine_vendor_archives(module_outputs, archive_path)
 

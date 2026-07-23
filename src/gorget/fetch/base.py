@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from gorget.config.schema import FetchStep
+from gorget.config.schema import FetchStep, ToolchainEntry
 from gorget.config.substitution import SubstitutionVars
 from gorget.constants import CHECKSUM_ALGO
 from gorget.specfile import SpecFile
@@ -32,6 +32,7 @@ class FetchContext:
     # fetch list knows which checkout to vendor against (e.g. the etcd
     # multi-submodule case: git-fetch the repo, then vendor several subdirs of it).
     source_dir: Path | None = None
+    toolchain: list[ToolchainEntry] = field(default_factory=list)
 
 
 class FetchStepHandler(Protocol):

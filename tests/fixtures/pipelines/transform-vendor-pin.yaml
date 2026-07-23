@@ -1,0 +1,15 @@
+fetch:
+  - type: git
+    repo: "https://example.com/example.git"
+    ref: "v${VERSION}"
+transform:
+  - type: vendor-pin
+    ecosystem: go
+    pins:
+      - dependency: "golang.org/x/net"
+        minimum-version: "0.23.0"
+  - type: vendor
+    ecosystem: go
+toolchain:
+  - name: go
+    version: "1.22.0"

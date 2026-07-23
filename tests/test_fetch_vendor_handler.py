@@ -3,14 +3,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from gorget.config.schema import VendorModule, VendorStep
+from gorget.config.schema import ToolchainEntry, VendorModule, VendorStep
 from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchContext
 from gorget.fetch.vendor import VendorHandler
 
 
-def make_ctx(work_dir, source_dir=None, dry_run=False):
+def make_ctx(work_dir, source_dir=None, dry_run=False, toolchain=()):
     return FetchContext(
         work_dir=work_dir,
         package_dir=work_dir,
@@ -20,6 +20,7 @@ def make_ctx(work_dir, source_dir=None, dry_run=False):
         ),
         dry_run=dry_run,
         source_dir=source_dir,
+        toolchain=list(toolchain),
     )
 
 
@@ -33,7 +34,7 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
-    def fake_vendor(module_dir):
+    def fake_vendor(module_dir, toolchain=()):
         module_dir.mkdir(parents=True, exist_ok=True)
         (module_dir / "go.sum").write_text("checksums")
         vendor_dir = module_dir / "vendor"
@@ -57,7 +58,7 @@ def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
     source_dir = tmp_path / "etcd"
     source_dir.mkdir()
 
-    def fake_vendor(module_dir):
+    def fake_vendor(module_dir, toolchain=()):
         module_dir.mkdir(parents=True, exist_ok=True)
         vendor_dir = module_dir / "vendor"
         vendor_dir.mkdir()
@@ -91,3 +92,21 @@ def test_vendor_dry_run_skips_ecosystem_and_combine(tmp_path, mocker):
     artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=tmp_path, dry_run=True))
     mock_vendor.assert_not_called()
     assert artifacts[0].checksum is None
+
+
+def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+
+    def fake_vendor(module_dir, toolchain=()):
+        vendor_dir = module_dir / "vendor"
+        vendor_dir.mkdir(parents=True)
+        (vendor_dir / "x.txt").write_text("x")
+        return vendor_dir
+
+    mock_vendor = Mock(side_effect=fake_vendor)
+    mocker.patch("gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
+    step = VendorStep(ecosystem="go")
+    toolchain = [ToolchainEntry(name="go", version="1.22.0")]
+    VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir, toolchain=toolchain))
+    mock_vendor.assert_called_once_with(source_dir / ".", toolchain)
