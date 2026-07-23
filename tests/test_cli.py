@@ -137,10 +137,12 @@ def test_main_stage_failure_under_dry_run_prints_report(tmp_path, capsys):
     # verify:/policy: both skip entirely under --dry-run (nothing was really
     # fetched to check), so use a toolchain mismatch instead -- that check
     # runs unconditionally, dry-run or not, and needs no mocking to fail
-    # deterministically (no real Go install will ever match this version).
+    # deterministically. Uses python, not go/node/etc: python3 is guaranteed
+    # present in any environment capable of running this test suite at all
+    # (unlike other toolchains, which may be absent in a minimal build root).
     (tmp_path / "foo.spec").write_text("Name: foo\nVersion: 1.2.3\nRelease: 1\n")
     (tmp_path / "pipeline.yaml").write_text(
-        "toolchain:\n  - name: go\n    version: 999.999.999\n"
+        "toolchain:\n  - name: python\n    version: 999.999.999\n"
     )
 
     exit_code = main(

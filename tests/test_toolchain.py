@@ -91,6 +91,15 @@ def test_verify_installed_tool_not_on_path_raises(mocker):
         verify_installed([ToolchainEntry(name="go", version="1.22.0")])
 
 
+def test_verify_installed_binary_not_installed_raises_config_error(mocker):
+    # Distinct from "on PATH but errors" above: the binary doesn't exist at
+    # all, which subprocess.run() surfaces as FileNotFoundError even with
+    # check=False -- must not crash with an unhandled traceback.
+    mocker.patch("gorget.toolchain.run", side_effect=FileNotFoundError("go"))
+    with pytest.raises(GorgetConfigError, match="not available"):
+        verify_installed([ToolchainEntry(name="go", version="1.22.0")])
+
+
 def test_verify_installed_unparseable_output_raises(mocker):
     mocker.patch("gorget.toolchain.run", return_value=_completed(stdout="nonsense"))
     with pytest.raises(GorgetConfigError, match="Could not parse"):
