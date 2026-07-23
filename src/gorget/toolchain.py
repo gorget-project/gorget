@@ -59,7 +59,13 @@ def verify_installed(entries: Sequence[ToolchainEntry]) -> None:
                 f"toolchain versions (see HUM-4990/HUM-4789)."
             )
         cmd, pattern = check
-        result = run(cmd)
+        try:
+            result = run(cmd)
+        except FileNotFoundError as exc:
+            raise GorgetConfigError(
+                f"Required toolchain {entry.name}@{entry.version} is not available "
+                f"(command not found: {cmd[0]!r})"
+            ) from exc
         if result.returncode != 0:
             raise GorgetConfigError(
                 f"Required toolchain {entry.name}@{entry.version} is not available "
