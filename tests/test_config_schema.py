@@ -1,10 +1,15 @@
 from gorget.config.schema import (
+    BuildUiStep,
     GitStep,
     PipelineSpec,
+    RunStep,
     SpecSourceStep,
     SpecUpdateStep,
+    StripTarballStep,
+    ToolchainEntry,
     UrlStep,
     VendorModule,
+    VendorPinStep,
     VendorStep,
 )
 
@@ -47,3 +52,35 @@ def test_git_step_defaults():
 def test_vendor_step_default_single_module():
     step = VendorStep(ecosystem="go")
     assert step.modules == [VendorModule(path=".")]
+
+
+def test_strip_tarball_step_defaults():
+    step = StripTarballStep()
+    assert step.target is None
+    assert step.paths == []
+
+
+def test_vendor_pin_step_default_single_module():
+    step = VendorPinStep(ecosystem="go")
+    assert step.modules == [VendorModule(path=".")]
+    assert step.pins == []
+
+
+def test_build_ui_step_defaults():
+    step = BuildUiStep()
+    assert step.ecosystem == "npm"
+    assert step.script == "build"
+    assert step.path == "."
+    assert step.output_dir == "dist"
+
+
+def test_run_step_defaults():
+    step = RunStep(command=["make", "generate"])
+    assert step.path == "."
+    assert step.outputs == []
+
+
+def test_toolchain_entry_fields():
+    entry = ToolchainEntry(name="go", version="1.22.0")
+    assert entry.name == "go"
+    assert entry.version == "1.22.0"

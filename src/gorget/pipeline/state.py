@@ -16,6 +16,10 @@ class StageState:
     spec: SpecFile
     report: PipelineReport
     artifacts: list[FetchedArtifact] = field(default_factory=list)
+    # Set by FetchStage after a `git` step clones a checkout, so Transform can
+    # reuse it (e.g. for `vendor-pin`/`vendor`/`build-ui`/`run` steps) without
+    # re-extracting a tarball.
+    source_dir: Path | None = None
 
     def __post_init__(self) -> None:
         # Same list object, not a copy: as FetchStage extends `artifacts`,

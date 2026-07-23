@@ -3,7 +3,18 @@ from pathlib import Path
 import pytest
 
 from gorget.config.loader import build_pipeline_spec, load_yaml, parse_pipeline_spec
-from gorget.config.schema import GitStep, SpecSourceStep, SpecUpdateStep, UrlStep, VendorStep
+from gorget.config.schema import (
+    BuildUiStep,
+    GitStep,
+    RunStep,
+    SpecSourceStep,
+    SpecUpdateStep,
+    StripTarballStep,
+    ToolchainEntry,
+    UrlStep,
+    VendorPinStep,
+    VendorStep,
+)
 from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError
 
@@ -36,9 +47,14 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert isinstance(spec.fetch[4], VendorStep)
     assert spec.fetch[4].ecosystem == "go"
 
-    # Inert sections still parse without error, as raw passthrough.
     assert len(spec.transform.steps) == 1
+    assert isinstance(spec.transform.steps[0], StripTarballStep)
+    assert spec.transform.steps[0].paths == ["docs/"]
     assert len(spec.toolchain.entries) == 1
+    assert spec.toolchain.entries[0].name == "go"
+    assert spec.toolchain.entries[0].version == "1.22"
+
+    # verify/policy/patches/post remain inert raw passthrough this story.
     assert len(spec.verify.steps) == 1
     assert spec.policy.rules["vendor-constraints"]["go"]["minimum"] == "1.20"
     assert len(spec.patches.entries) == 1
@@ -63,6 +79,63 @@ def test_build_pipeline_spec_vendor_multi_submodule():
 def test_unknown_fetch_type_raises_config_error():
     with pytest.raises(GorgetConfigError, match="Unknown fetch step type"):
         build_pipeline_spec(FIXTURES / "unknown-fetch-type.yaml", substitution_vars=make_vars())
+
+
+def test_transform_strip_tarball_step_parses():
+    spec = build_pipeline_spec(
+        FIXTURES / "transform-strip-tarball.yaml", substitution_vars=make_vars()
+    )
+    step = spec.transform.steps[0]
+    assert isinstance(step, StripTarballStep)
+    assert step.target == "foo-1.2.3.tar.gz"
+    assert step.paths == ["*/deps/bundled-openssl"]
+
+
+def test_transform_vendor_pin_then_vendor_sequencing():
+    spec = build_pipeline_spec(
+        FIXTURES / "transform-vendor-pin.yaml", substitution_vars=make_vars()
+    )
+    assert isinstance(spec.transform.steps[0], VendorPinStep)
+    assert spec.transform.steps[0].pins[0].dependency == "golang.org/x/net"
+    assert spec.transform.steps[0].pins[0].minimum_version == "0.23.0"
+    assert isinstance(spec.transform.steps[1], VendorStep)
+    assert spec.toolchain.entries == [ToolchainEntry(name="go", version="1.22.0")]
+
+
+def test_transform_build_ui_step_parses():
+    spec = build_pipeline_spec(
+        FIXTURES / "transform-build-ui.yaml", substitution_vars=make_vars()
+    )
+    step = spec.transform.steps[0]
+    assert isinstance(step, BuildUiStep)
+    assert step.ecosystem == "npm"
+    assert step.path == "ui"
+    assert step.output_dir == "dist"
+
+
+def test_transform_run_step_parses():
+    spec = build_pipeline_spec(FIXTURES / "transform-run.yaml", substitution_vars=make_vars())
+    step = spec.transform.steps[0]
+    assert isinstance(step, RunStep)
+    assert step.command == ["make", "generate"]
+    assert step.outputs == ["generated/"]
+
+
+def test_unknown_transform_type_raises_config_error():
+    with pytest.raises(GorgetConfigError, match="Unknown transform step type"):
+        build_pipeline_spec(
+            FIXTURES / "unknown-transform-type.yaml", substitution_vars=make_vars()
+        )
+
+
+def test_transform_section_must_be_a_list():
+    with pytest.raises(GorgetConfigError, match="'transform' section must be a list"):
+        parse_pipeline_spec({"transform": {"type": "run"}})
+
+
+def test_toolchain_section_must_be_a_list():
+    with pytest.raises(GorgetConfigError, match="'toolchain' section must be a list"):
+        parse_pipeline_spec({"toolchain": {"name": "go"}})
 
 
 def test_unknown_top_level_key_is_ignored_not_fatal():

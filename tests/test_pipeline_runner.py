@@ -6,9 +6,9 @@ from typing import ClassVar
 
 import pytest
 
-from gorget.config.schema import PipelineSpec
+from gorget.config.schema import PipelineSpec, ToolchainEntry, ToolchainSection
 from gorget.context import build_run_context
-from gorget.exceptions import GorgetPolicyViolation
+from gorget.exceptions import GorgetConfigError, GorgetPolicyViolation
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.runner import PipelineRunner
 
@@ -102,6 +102,47 @@ def test_exception_from_a_stage_propagates_uncaught(tmp_path, mocker):
     with pytest.raises(GorgetPolicyViolation, match="nope"):
         PipelineRunner(ctx, PipelineSpec()).run()
     assert calls == ["a"]
+
+
+def test_toolchain_verified_before_any_stage_runs(tmp_path, mocker):
+    # verify_installed() checks the declared entry against whatever's already
+    # installed (see gorget/toolchain.py) -- a mismatch is a hard config
+    # error, raised before any stage runs.
+    mocker.patch(
+        "gorget.toolchain.run",
+        return_value=subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="go version go1.20.0 linux/amd64\n", stderr=""
+        ),
+    )
+    calls = []
+    mocker.patch(
+        "gorget.pipeline.runner.STAGE_ORDER",
+        [make_recording_stage_cls("a", calls)],
+    )
+
+    ctx = make_ctx(tmp_path)
+    spec = PipelineSpec(
+        toolchain=ToolchainSection(entries=[ToolchainEntry(name="go", version="1.22.0")])
+    )
+    with pytest.raises(GorgetConfigError, match="go@1.22.0"):
+        PipelineRunner(ctx, spec).run()
+
+    assert calls == []  # no stage ran
+
+
+def test_toolchain_verified_even_under_dry_run(tmp_path, mocker):
+    mocker.patch(
+        "gorget.toolchain.run",
+        return_value=subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="not found"
+        ),
+    )
+    ctx = dataclasses.replace(make_ctx(tmp_path), dry_run=True)
+    spec = PipelineSpec(
+        toolchain=ToolchainSection(entries=[ToolchainEntry(name="go", version="1.22.0")])
+    )
+    with pytest.raises(GorgetConfigError):
+        PipelineRunner(ctx, spec).run()
 
 
 def test_fetch_stage_runs_for_real_and_populates_report_artifacts(tmp_path, mocker):

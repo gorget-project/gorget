@@ -1,0 +1,18 @@
+fetch:
+  # Reset Release to 1 before resolving Source URLs -- a no-op here since the
+  # spec already declares Release: 1, but this is where a real version bump
+  # would happen. spec-update always edits a writable copy of the spec, never
+  # the read-only /package mount.
+  - type: spec-update
+    reset-release: "1"
+
+  # Downloads Source0 with %{version} macro-resolved by rpmspec. Change
+  # --version on the CLI and this URL moves with it (see README).
+  - type: spec-source
+    index: 0
+
+  # An explicit URL not declared anywhere in the spec: the tarball's GPG
+  # signature.
+  - type: url
+    url: "https://ftp.gnu.org/gnu/hello/hello-${VERSION}.tar.gz.sig"
+    filename: "hello-${VERSION}.tar.gz.sig"

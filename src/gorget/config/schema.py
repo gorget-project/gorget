@@ -1,10 +1,9 @@
 """Dataclass model for the ``*.source-pipeline.yaml`` schema.
 
-Only the ``fetch`` section (and the ``spec-update``/``spec-source``/``url``/``git``/
-``vendor`` step types within it) has real behavior in this story. The remaining
-top-level sections (``transform``, ``toolchain``, ``verify``, ``policy``, ``patches``,
-``post``) round-trip as untyped passthrough structures so the parser doesn't choke on
-a full pipeline YAML, without this story guessing at shapes a future story owns.
+The ``fetch``, ``transform``, and ``toolchain`` sections have real behavior. The
+remaining top-level sections (``verify``, ``policy``, ``patches``, ``post``) round-trip
+as untyped passthrough structures so the parser doesn't choke on a full pipeline YAML,
+without this story guessing at shapes a future story owns.
 """
 
 from __future__ import annotations
@@ -80,13 +79,72 @@ FETCH_STEP_TYPES: dict[str, type] = {
 
 
 @dataclass(frozen=True, kw_only=True)
+class ToolchainEntry:
+    name: str
+    version: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class StripTarballStep:
+    type: Literal["strip-tarball"] = "strip-tarball"
+    target: str | None = None
+    paths: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, kw_only=True)
+class VendorPinEntry:
+    dependency: str
+    minimum_version: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class VendorPinStep:
+    type: Literal["vendor-pin"] = "vendor-pin"
+    ecosystem: Literal["go", "npm", "cargo"]
+    pins: list[VendorPinEntry] = field(default_factory=list)
+    modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
+
+
+@dataclass(frozen=True, kw_only=True)
+class BuildUiStep:
+    type: Literal["build-ui"] = "build-ui"
+    ecosystem: Literal["npm", "yarn"] = "npm"
+    script: str = "build"
+    path: str = "."
+    output_dir: str = "dist"
+    archive_name: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class RunStep:
+    type: Literal["run"] = "run"
+    command: list[str] = field(default_factory=list)
+    path: str = "."
+    outputs: list[str] = field(default_factory=list)
+
+
+# `vendor` is reused verbatim from the fetch schema: a `transform:` list can run
+# `vendor-pin` then `vendor` in order (edit lockfiles, then vendor) since Fetch's
+# own `vendor` step always runs before Transform and can't do that ordering itself.
+TransformStep = StripTarballStep | VendorPinStep | BuildUiStep | RunStep | VendorStep
+
+TRANSFORM_STEP_TYPES: dict[str, type] = {
+    "strip-tarball": StripTarballStep,
+    "vendor-pin": VendorPinStep,
+    "build-ui": BuildUiStep,
+    "run": RunStep,
+    "vendor": VendorStep,
+}
+
+
+@dataclass(frozen=True, kw_only=True)
 class TransformSection:
-    steps: list[dict] = field(default_factory=list)
+    steps: list[TransformStep] = field(default_factory=list)
 
 
 @dataclass(frozen=True, kw_only=True)
 class ToolchainSection:
-    entries: list[dict] = field(default_factory=list)
+    entries: list[ToolchainEntry] = field(default_factory=list)
 
 
 @dataclass(frozen=True, kw_only=True)

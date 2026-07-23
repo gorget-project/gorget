@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 
 from gorget import __version__
@@ -35,11 +36,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpg-keys-dir", default=None, help="Override the /gpg-keys mount")
     parser.add_argument("--output-dir", default=None, help="Override the /output mount")
     parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Trace every stage/step transition and subprocess command run, to stderr",
+    )
+    parser.add_argument(
         "--program-version",
         action="version",
         version=f"gorget {__version__}",
     )
     return parser
+
+
+def _configure_debug_logging() -> None:
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("[gorget debug] %(name)s: %(message)s"))
+    logger = logging.getLogger("gorget")
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
 
 
 def resolve_pipeline_spec(ctx: RunContext) -> PipelineSpec:
@@ -55,6 +69,8 @@ def resolve_pipeline_spec(ctx: RunContext) -> PipelineSpec:
 def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    if args.debug:
+        _configure_debug_logging()
     try:
         ctx = build_run_context(args)
         pipeline_spec = resolve_pipeline_spec(ctx)

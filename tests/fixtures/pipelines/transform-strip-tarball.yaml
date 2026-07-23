@@ -1,0 +1,8 @@
+fetch:
+  - type: spec-source
+    index: 0
+transform:
+  - type: strip-tarball
+    target: "foo-1.2.3.tar.gz"
+    paths:
+      - "*/deps/bundled-openssl"

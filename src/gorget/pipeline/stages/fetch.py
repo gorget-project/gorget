@@ -7,6 +7,7 @@ picks up `FetchContext.source_dir` set by an earlier `git` step in the same list
 
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar
 
 from gorget.config.schema import (
@@ -42,6 +43,8 @@ _HANDLERS: dict[type, Any] = {
     VendorStep: VendorHandler(),
 }
 
+logger = logging.getLogger("gorget.pipeline")
+
 
 class FetchStage:
     name: ClassVar[str] = "fetch"
@@ -53,8 +56,15 @@ class FetchStage:
             spec=state.spec,
             vars=ctx.vars,
             dry_run=ctx.dry_run,
+            toolchain=spec.toolchain.entries,
         )
         for step in spec.fetch:
             handler = _HANDLERS[type(step)]
-            state.artifacts.extend(handler.run(step, fetch_ctx))
+            logger.debug("fetch step: %s", step)
+            artifacts = handler.run(step, fetch_ctx)
+            logger.debug("fetch step produced: %s", [a.output_name for a in artifacts])
+            state.artifacts.extend(artifacts)
+        # Survives past this method's return (unlike `fetch_ctx` itself) so a
+        # later Transform stage can reuse the same checkout.
+        state.source_dir = fetch_ctx.source_dir
         return StageResult(name=self.name, status="success")
