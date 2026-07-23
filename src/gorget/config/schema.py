@@ -1,8 +1,8 @@
 """Dataclass model for the ``*.source-pipeline.yaml`` schema.
 
-The ``fetch``, ``transform``, and ``toolchain`` sections have real behavior. The
-remaining top-level sections (``verify``, ``policy``, ``patches``, ``post``) round-trip
-as untyped passthrough structures so the parser doesn't choke on a full pipeline YAML,
+The ``fetch``, ``transform``, ``toolchain``, ``verify``, and ``policy`` sections have
+real behavior. The remaining top-level sections (``patches``, ``post``) round-trip as
+untyped passthrough structures so the parser doesn't choke on a full pipeline YAML,
 without this story guessing at shapes a future story owns.
 """
 
@@ -191,8 +191,27 @@ class AcceptedChecksumsSection:
 
 
 @dataclass(frozen=True, kw_only=True)
+class VendorConstraintEntry:
+    package: str
+    ecosystem: Literal["go", "npm", "cargo"]
+    # Minimum version -- "at least this version," same semantics as vendor-pin.
+    version: str
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class LicenseComplianceSection:
+    disallowed: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, kw_only=True)
 class PolicySection:
-    rules: dict = field(default_factory=dict)
+    vendor_constraints: list[VendorConstraintEntry] = field(default_factory=list)
+    # Runs go mod verify / npm audit / cargo audit against every vendored module found.
+    audit: bool = False
+    license_compliance: LicenseComplianceSection = field(
+        default_factory=LicenseComplianceSection
+    )
 
 
 @dataclass(frozen=True, kw_only=True)

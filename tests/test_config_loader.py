@@ -65,8 +65,14 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert spec.accepted_checksums.entries[0].file == "example-1.2.2.tar.gz"
     assert spec.accepted_checksums.entries[0].checksum == "deadbeef"
 
-    # policy/patches/post remain inert raw passthrough this story.
-    assert spec.policy.rules["vendor-constraints"]["go"]["minimum"] == "1.20"
+    assert len(spec.policy.vendor_constraints) == 1
+    assert spec.policy.vendor_constraints[0].package == "golang.org/x/crypto"
+    assert spec.policy.vendor_constraints[0].ecosystem == "go"
+    assert spec.policy.vendor_constraints[0].version == "0.31.0"
+    assert spec.policy.audit is True
+    assert spec.policy.license_compliance.disallowed == ["GPL-3.0-only"]
+
+    # patches/post remain inert raw passthrough this story.
     assert len(spec.patches.entries) == 1
     assert len(spec.post.steps) == 1
 
@@ -198,3 +204,25 @@ def test_fetch_section_must_be_a_list():
 def test_missing_pipeline_file_raises_config_error():
     with pytest.raises(GorgetConfigError):
         load_yaml(FIXTURES / "does-not-exist.yaml")
+
+
+def test_policy_section_must_be_a_mapping():
+    with pytest.raises(GorgetConfigError, match="'policy' section must be a mapping"):
+        parse_pipeline_spec({"policy": ["not-a-mapping"]})
+
+
+def test_policy_vendor_constraints_must_be_a_list():
+    with pytest.raises(GorgetConfigError, match="'policy.vendor-constraints' must be a list"):
+        parse_pipeline_spec({"policy": {"vendor-constraints": {"package": "x"}}})
+
+
+def test_policy_license_compliance_must_be_a_mapping():
+    with pytest.raises(GorgetConfigError, match="'policy.license-compliance' must be a mapping"):
+        parse_pipeline_spec({"policy": {"license-compliance": ["GPL-3.0-only"]}})
+
+
+def test_policy_defaults_when_section_absent():
+    spec = parse_pipeline_spec({})
+    assert spec.policy.vendor_constraints == []
+    assert spec.policy.audit is False
+    assert spec.policy.license_compliance.disallowed == []

@@ -10,9 +10,8 @@ exactly how its sources are produced. When no pipeline YAML exists, gorget
 falls back to fetching every `Source` URL declared in the package's spec file.
 
 This is an early-stage implementation covering the **Fetch**, **Transform**,
-and **Verify** stages and the core framework (config parsing, variable
-substitution, the stage pipeline, and a minimal Emit). Policy is a stub
-pending later work.
+**Verify**, and **Policy** stages and the core framework (config parsing,
+variable substitution, the stage pipeline, and a minimal Emit).
 
 ## Container interface
 
@@ -132,6 +131,43 @@ message itself prints) -- copy it straight from the error, don't recompute
 it separately. Each entry requires a human-authored `reason:`, so accepting
 a re-publication always leaves an audit trail rather than silently
 suppressing the check.
+
+### `policy:`
+
+Runs after `verify:`, before Emit. Validates the *final vendored output* --
+acts as a safety net for `vendor-pin` (confirms a pin actually took effect)
+and catches violations in packages that don't use `vendor-pin` at all. Unlike
+`vendor-pin` (a one-time edit), this re-runs on every pipeline execution, so a
+later upstream update silently reverting a security fix fails the build
+instead of shipping quietly.
+
+```yaml
+policy:
+  vendor-constraints:
+    - package: sanitize-html
+      ecosystem: npm        # go | npm | cargo
+      version: "2.17.5"      # minimum version -- "at least this version"
+      reason: "CVE-2024-XXXXX"
+
+  audit: true                # run go mod verify / npm audit / cargo audit
+                              # against every vendored module found
+
+  license-compliance:
+    disallowed:
+      - GPL-3.0-only
+      - AGPL-3.0-only
+```
+
+| Check | Behavior |
+|---|---|
+| `vendor-constraints` | Resolves the actual vendored version (`go list -m`, `node_modules/<pkg>/package.json`, `Cargo.lock`) and compares against the declared minimum. Checks every vendored module for that ecosystem automatically -- no per-entry module path needed. Fails closed. |
+| `audit` | `go mod verify` checks module cache checksums against `go.sum` -- deterministic, no network, **fails closed**. `npm audit`/`cargo audit` query live vulnerability databases over the network -- non-deterministic (results can change with no code change), so findings are recorded in `report.json` but are **warn-only, never fail closed**. `cargo-audit` must be separately installed on `PATH`. |
+| `license-compliance` | Flags a vendored dependency whose declared license is in `disallowed`. Supported for npm (`package.json`'s `license` field) and Cargo (`Cargo.toml`'s `license` field) only -- Go has no standard machine-readable per-module license field, so Go modules get a single "unsupported" warning instead of a fabricated check. |
+
+A package with none of the three configured gets a non-blocking "no policy
+configured" skip. All deterministic failures (`vendor-constraints`,
+`go mod verify`, `license-compliance`) are aggregated into one error, same as
+`verify:`.
 
 ### `toolchain:`
 

@@ -23,7 +23,9 @@ def test_pipeline_spec_defaults_are_empty():
     assert spec.transform.steps == []
     assert spec.toolchain.entries == []
     assert spec.verify.steps == []
-    assert spec.policy.rules == {}
+    assert spec.policy.vendor_constraints == []
+    assert spec.policy.audit is False
+    assert spec.policy.license_compliance.disallowed == []
     assert spec.patches.entries == []
     assert spec.post.steps == []
     assert spec.accepted_checksums.entries == []
