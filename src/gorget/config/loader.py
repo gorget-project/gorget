@@ -19,6 +19,7 @@ from gorget.config.schema import (
     AcceptedChecksumEntry,
     AcceptedChecksumsSection,
     FetchStep,
+    LicenseComplianceSection,
     MacroSubstitution,
     PatchesSection,
     PipelineSpec,
@@ -28,6 +29,7 @@ from gorget.config.schema import (
     ToolchainSection,
     TransformSection,
     TransformStep,
+    VendorConstraintEntry,
     VendorModule,
     VendorPinEntry,
     VerifySection,
@@ -142,6 +144,43 @@ def _parse_verify_step(raw_step: object) -> VerifyStep:
         raise GorgetConfigError(f"Invalid {step_type} verify step: {exc}") from exc
 
 
+def _parse_vendor_constraint_entry(raw_entry: object) -> VendorConstraintEntry:
+    if not isinstance(raw_entry, dict):
+        raise GorgetConfigError(
+            f"Each vendor-constraints entry must be a mapping, got: {raw_entry!r}"
+        )
+    try:
+        return VendorConstraintEntry(**_snake_case_keys(raw_entry))
+    except TypeError as exc:
+        raise GorgetConfigError(f"Invalid vendor-constraints entry: {exc}") from exc
+
+
+def _parse_policy_section(raw: dict) -> PolicySection:
+    raw_policy = raw.get("policy", {})
+    if not isinstance(raw_policy, dict):
+        raise GorgetConfigError("The 'policy' section must be a mapping")
+
+    raw_vendor_constraints = raw_policy.get("vendor-constraints", [])
+    if not isinstance(raw_vendor_constraints, list):
+        raise GorgetConfigError("'policy.vendor-constraints' must be a list of entries")
+    vendor_constraints = [
+        _parse_vendor_constraint_entry(entry) for entry in raw_vendor_constraints
+    ]
+
+    raw_license_compliance = raw_policy.get("license-compliance", {})
+    if not isinstance(raw_license_compliance, dict):
+        raise GorgetConfigError("'policy.license-compliance' must be a mapping")
+    disallowed = raw_license_compliance.get("disallowed", [])
+    if not isinstance(disallowed, list):
+        raise GorgetConfigError("'policy.license-compliance.disallowed' must be a list")
+
+    return PolicySection(
+        vendor_constraints=vendor_constraints,
+        audit=bool(raw_policy.get("audit", False)),
+        license_compliance=LicenseComplianceSection(disallowed=disallowed),
+    )
+
+
 def _parse_accepted_checksum_entry(raw_entry: object) -> AcceptedChecksumEntry:
     if not isinstance(raw_entry, dict):
         raise GorgetConfigError(
@@ -191,7 +230,7 @@ def parse_pipeline_spec(raw: dict) -> PipelineSpec:
         transform=TransformSection(steps=transform_steps),
         toolchain=ToolchainSection(entries=toolchain_entries),
         verify=VerifySection(steps=verify_steps),
-        policy=_parse_dict_section(raw, "policy", PolicySection, "rules"),
+        policy=_parse_policy_section(raw),
         patches=_parse_list_section(raw, "patches", PatchesSection, "entries"),
         post=_parse_list_section(raw, "post", PostSection, "steps"),
         accepted_checksums=AcceptedChecksumsSection(entries=accepted_checksum_entries),
@@ -204,15 +243,6 @@ def _parse_list_section(raw: dict, key: str, section_cls: type, field_name: str)
     value = raw[key]
     if not isinstance(value, list):
         raise GorgetConfigError(f"The '{key}' section must be a list")
-    return section_cls(**{field_name: value})
-
-
-def _parse_dict_section(raw: dict, key: str, section_cls: type, field_name: str):
-    if key not in raw:
-        return section_cls()
-    value = raw[key]
-    if not isinstance(value, dict):
-        raise GorgetConfigError(f"The '{key}' section must be a mapping")
     return section_cls(**{field_name: value})
 
 

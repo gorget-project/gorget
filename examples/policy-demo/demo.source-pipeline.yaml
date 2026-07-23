@@ -1,0 +1,19 @@
+fetch:
+  - type: git
+    repo: "./demo-repo"
+    ref: "v1.0.0"
+
+transform:
+  - type: vendor
+    ecosystem: npm
+
+# Confirms the vendored `ms` dependency actually meets the declared minimum --
+# re-checked on every run, so a later upstream/lockfile change silently
+# reverting it fails closed instead of shipping quietly. See README.md for
+# the real incident this reproduces.
+policy:
+  vendor-constraints:
+    - package: ms
+      ecosystem: npm
+      version: "2.0.0"
+      reason: "demo: pin confirmation"
