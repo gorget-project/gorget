@@ -1,0 +1,8 @@
+# A separate pipeline from demo.source-pipeline.yaml: verify:/policy: both
+# skip entirely under --dry-run (nothing was really fetched to check), so
+# there's no way for that pipeline to fail under --dry-run. A toolchain
+# mismatch does fail under --dry-run -- that check always runs, before any
+# stage does -- which is what this file demonstrates instead.
+toolchain:
+  - name: go
+    version: 999.999.999

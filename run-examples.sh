@@ -82,6 +82,31 @@ run_demo "full-pipeline-demo"
     --debug
 )
 
+run_demo "emit-on-failure-demo"
+(
+  # This demo is deliberately broken -- it's meant to exit non-zero. Assert
+  # that explicitly (exit 1 + report.json present) rather than letting the
+  # outer `set -e` just stop the whole script on an "unexpected" failure.
+  cd examples/emit-on-failure-demo
+  set +e
+  gorget --version 2.12.1 \
+    --package-dir . \
+    --pipeline-file demo.source-pipeline.yaml \
+    --output-dir /tmp/gorget-examples/emit-on-failure-demo \
+    --debug
+  status=$?
+  set -e
+  if [ "$status" -ne 1 ]; then
+    echo "expected exit code 1, got ${status}" >&2
+    exit 1
+  fi
+  if [ ! -f /tmp/gorget-examples/emit-on-failure-demo/report.json ]; then
+    echo "expected report.json to exist despite the failure" >&2
+    exit 1
+  fi
+  echo "Confirmed: exit code 1, report.json written despite the failure."
+)
+
 echo
 echo "=================================================================="
 echo "All examples ran successfully. Output dirs under /tmp/gorget-examples/"

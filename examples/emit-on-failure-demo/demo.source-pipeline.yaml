@@ -1,0 +1,13 @@
+fetch:
+  - type: url
+    url: "https://ftp.gnu.org/gnu/hello/hello-2.12.1.tar.gz"
+
+# Deliberately broken: `signature` references a file that was never fetched
+# (no matching `url`/`spec-source`/`git` step produced it). This is the
+# point -- it makes verify fail closed for real, to demonstrate that
+# report.json still gets written even though the pipeline as a whole fails.
+verify:
+  - type: gpg-signature
+    target: "hello-2.12.1.tar.gz"
+    signature: "hello-2.12.1.tar.gz.sig"
+    keyring: "some-key.asc"
