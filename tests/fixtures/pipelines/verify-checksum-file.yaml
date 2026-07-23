@@ -1,0 +1,10 @@
+fetch:
+  - type: spec-source
+    index: 0
+  - type: url
+    url: "https://example.com/SHASUMS256.txt"
+verify:
+  - type: checksum-file
+    target: "foo-1.2.3.tar.gz"
+    checksums-file: "SHASUMS256.txt"
+    algorithm: sha256

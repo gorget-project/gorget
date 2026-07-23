@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchedArtifact
 from gorget.pipeline.result import PipelineReport
 from gorget.specfile import SpecFile
@@ -26,3 +27,9 @@ class StageState:
         # `report.artifacts` (and report.to_dict()) reflect it automatically --
         # no separate "collect artifacts into the report" step needed anywhere.
         self.report.artifacts = self.artifacts
+
+    def find_artifact(self, output_name: str) -> FetchedArtifact:
+        for artifact in self.artifacts:
+            if artifact.output_name == output_name:
+                return artifact
+        raise GorgetConfigError(f"No fetched artifact named {output_name!r}")

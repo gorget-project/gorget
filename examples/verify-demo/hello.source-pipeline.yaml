@@ -1,0 +1,25 @@
+fetch:
+  # Reset Release to 1 before resolving Source URLs -- a no-op here since the
+  # spec already declares Release: 1, but this is where a real version bump
+  # would happen. spec-update always edits a writable copy of the spec, never
+  # the read-only /package mount.
+  - type: spec-update
+    reset-release: "1"
+
+  # Downloads Source0 with %{version} macro-resolved by rpmspec.
+  - type: spec-source
+    index: 0
+
+  # An explicit URL not declared anywhere in the spec: the tarball's real
+  # upstream GPG detached signature.
+  - type: url
+    url: "https://ftp.gnu.org/gnu/hello/hello-${VERSION}.tar.gz.sig"
+    filename: "hello-${VERSION}.tar.gz.sig"
+
+# Verified against the real GNU Hello maintainer's public key, mounted at
+# /gpg-keys/hello-maintainer.asc (see README for where it came from).
+verify:
+  - type: gpg-signature
+    target: "hello-${VERSION}.tar.gz"
+    signature: "hello-${VERSION}.tar.gz.sig"
+    keyring: "hello-maintainer.asc"

@@ -9,10 +9,10 @@ Each package gets a declarative `<package>.source-pipeline.yaml` describing
 exactly how its sources are produced. When no pipeline YAML exists, gorget
 falls back to fetching every `Source` URL declared in the package's spec file.
 
-This is an early-stage implementation covering the **Fetch** and **Transform**
-stages and the core framework (config parsing, variable substitution, the
-stage pipeline, and a minimal Emit). Verify and Policy are stubs pending
-later work.
+This is an early-stage implementation covering the **Fetch**, **Transform**,
+and **Verify** stages and the core framework (config parsing, variable
+substitution, the stage pipeline, and a minimal Emit). Policy is a stub
+pending later work.
 
 ## Container interface
 
@@ -32,7 +32,7 @@ podman run --rm \
 |---|---|
 | `/package` (ro) | Package directory: spec file, patches, sources manifest |
 | `/pipeline.yaml` (ro) | The package's pipeline definition (optional) |
-| `/gpg-keys` (ro) | Centralized GPG keyring (unused until the Verify stage) |
+| `/gpg-keys` (ro) | Centralized GPG keyrings, one armored/binary key file per trusted upstream, referenced by filename from `verify: gpg-signature` steps |
 | `/output` (rw) | Fetched tarballs, `sources` manifest, `report.json` |
 
 ## Pipeline steps
@@ -63,6 +63,75 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 source tree: a `git` fetch step's checkout if one ran, otherwise the sole
 fetched artifact gets extracted on first use (an error if there's more than
 one and no way to tell which to use).
+
+### `verify:`
+
+Runs after `transform:`. Validates integrity/authenticity of what was
+fetched, before Policy and Emit.
+
+| Step | Purpose |
+|---|---|
+| `gpg-signature` | Verify a detached GPG signature against a keyring mounted at `/gpg-keys` |
+| `checksum-file` | Verify an artifact's digest against an entry in a fetched checksums-listing file (e.g. `SHASUMS256.txt`) |
+
+```yaml
+verify:
+  - type: gpg-signature
+    target: "foo-1.2.3.tar.gz"        # output_name of an already-fetched artifact
+    signature: "foo-1.2.3.tar.gz.asc"  # output_name of the fetched detached signature
+    keyring: "example-project.asc"      # filename within /gpg-keys
+
+  - type: checksum-file
+    target: "foo-1.2.3.tar.gz"
+    checksums-file: "SHASUMS256.txt"    # output_name of the fetched checksums listing
+    algorithm: sha256                    # sha256 (default) | sha512 | sha1 | md5
+```
+
+Unlike `transform:`'s `strip-tarball`, there is no auto-select fallback when
+`target`/`signature`/`checksums-file` are omitted -- guessing wrong on a
+security check is worse than on a convenience transform, so all three are
+required.
+
+`gpg-signature` imports the keyring into a fresh, throwaway GPG homedir per
+check (`gpg --homedir <tmp> --import ... && gpg --homedir <tmp> --verify
+...`) rather than using `--keyring` directly, for robustness across keyring
+formats and modern GPG's keybox-format quirks.
+
+**Re-publication detection runs automatically whenever `/package/sources`
+exists** -- no `verify:` step needed to opt in, since it's the core
+supply-chain safety net: every freshly-fetched artifact whose filename is
+already recorded in `sources` has its checksum recomputed (at whichever
+digest algorithm the existing entry uses) and compared, failing closed if
+upstream silently republished a same-named file with different content. A
+package with neither an existing `sources` file nor any declared `verify:`
+steps gets a non-blocking "no verification configured" warning instead.
+
+All verification failures across all checks -- re-publication and declared
+`verify:` steps alike -- are aggregated into one error rather than stopping
+at the first failure, so a single run surfaces everything wrong at once.
+`report.json`'s `verify` stage includes a `details` list with the per-check
+type/target/status/reason.
+
+### `accepted-checksums:`
+
+A top-level section, sibling to `fetch`/`transform`/`verify`/`toolchain`,
+for explicitly accepting a re-publication that re-publication detection
+would otherwise fail closed on:
+
+```yaml
+accepted-checksums:
+  - file: "foo-1.2.3.tar.gz"
+    checksum: "f871e5f8...747749e2"   # the artifact's sha512, from the failure message
+    reason: "Upstream re-cut the tarball to fix line endings; verified by hand"
+```
+
+Matching against `sources` uses whatever digest algorithm that file already
+records, but `accepted-checksums:` entries are always matched against the
+artifact's own **sha512** checksum (gorget's standard, and what the failure
+message itself prints) -- copy it straight from the error, don't recompute
+it separately. Each entry requires a human-authored `reason:`, so accepting
+a re-publication always leaves an audit trail rather than silently
+suppressing the check.
 
 ### `toolchain:`
 

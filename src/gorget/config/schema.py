@@ -148,8 +148,46 @@ class ToolchainSection:
 
 
 @dataclass(frozen=True, kw_only=True)
+class GpgSignatureStep:
+    type: Literal["gpg-signature"] = "gpg-signature"
+    # No auto-select fallback (unlike e.g. strip-tarball's optional `target`) --
+    # guessing wrong on a security check is worse than on a convenience transform.
+    target: str
+    signature: str
+    keyring: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class ChecksumFileStep:
+    type: Literal["checksum-file"] = "checksum-file"
+    target: str
+    checksums_file: str
+    algorithm: Literal["sha256", "sha512", "sha1", "md5"] = "sha256"
+
+
+VerifyStep = GpgSignatureStep | ChecksumFileStep
+
+VERIFY_STEP_TYPES: dict[str, type] = {
+    "gpg-signature": GpgSignatureStep,
+    "checksum-file": ChecksumFileStep,
+}
+
+
+@dataclass(frozen=True, kw_only=True)
 class VerifySection:
-    steps: list[dict] = field(default_factory=list)
+    steps: list[VerifyStep] = field(default_factory=list)
+
+
+@dataclass(frozen=True, kw_only=True)
+class AcceptedChecksumEntry:
+    file: str
+    checksum: str
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class AcceptedChecksumsSection:
+    entries: list[AcceptedChecksumEntry] = field(default_factory=list)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -177,3 +215,6 @@ class PipelineSpec:
     policy: PolicySection = field(default_factory=PolicySection)
     patches: PatchesSection = field(default_factory=PatchesSection)
     post: PostSection = field(default_factory=PostSection)
+    accepted_checksums: AcceptedChecksumsSection = field(
+        default_factory=AcceptedChecksumsSection
+    )
