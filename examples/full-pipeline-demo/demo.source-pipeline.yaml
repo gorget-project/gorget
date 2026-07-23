@@ -1,0 +1,81 @@
+fetch:
+  - type: git
+    repo: "./demo-repo"
+    ref: "main"
+
+  # A second, independent fetch lane exercising `verify:` -- git-cloned/tarred
+  # content isn't byte-stable run-to-run (timestamps), so gpg-signature and
+  # re-publication checks below target this real, immutable upstream release
+  # instead (same artifact as ../verify-demo).
+  - type: url
+    url: "https://ftp.gnu.org/gnu/hello/hello-2.12.1.tar.gz"
+  - type: url
+    url: "https://ftp.gnu.org/gnu/hello/hello-2.12.1.tar.gz.sig"
+    filename: "hello-2.12.1.tar.gz.sig"
+
+transform:
+  # Remove docs/ from the source tarball before it's emitted. Note this only
+  # affects the *archived copy* -- it doesn't touch the live checkout that
+  # vendor-pin/vendor/build-ui/run operate against below. `target` is required
+  # here (unlike go-pipeline-demo) since multiple artifacts are now fetched --
+  # no auto-select fallback once there's more than one to guess between.
+  - type: strip-tarball
+    target: "demo-main.tar.gz"
+    paths:
+      - "*/docs"
+
+  - type: vendor-pin
+    ecosystem: go
+    pins:
+      # Go module versions need the "v" prefix -- unlike npm/cargo, which
+      # don't use one. Whatever minimum-version you write is passed through
+      # to `go mod edit -require=<dependency>@<minimum-version>` verbatim.
+      - dependency: "rsc.io/quote"
+        minimum-version: "v1.5.2"
+
+  # Re-vendor now that vendor-pin has bumped the dependency -- vendor is a
+  # legal step under both fetch: and transform:, reused unchanged either way.
+  - type: vendor
+    ecosystem: go
+
+  - type: build-ui
+    ecosystem: npm
+    script: build
+    path: ui
+    output-dir: dist
+
+  # Escape hatch: an arbitrary command, with declared outputs archived as new
+  # artifacts afterward.
+  - type: run
+    command: ["sh", "-c", "go version > go-version.txt"]
+    outputs:
+      - go-version.txt
+
+# toolchain: only *validates* against whatever's already installed -- it
+# never fetches or switches versions (see gorget/toolchain.py). Uncomment
+# and set `version:` to your own `go version` output (setup-demo-repo.sh
+# prints the exact value) to see it pass; use a wrong version to see it fail
+# closed instead. See README.md section 4.
+# toolchain:
+#   - name: go
+#     version: 1.22.0
+
+# Real GPG signature check against GNU Hello's actual upstream maintainer key
+# (see ../verify-demo/README.md for where gpg-keys/hello-maintainer.asc came
+# from). Re-publication detection also runs automatically since `sources`
+# exists in this directory -- no separate step needed for it.
+verify:
+  - type: gpg-signature
+    target: "hello-2.12.1.tar.gz"
+    signature: "hello-2.12.1.tar.gz.sig"
+    keyring: "hello-maintainer.asc"
+
+# Safety net confirming vendor-pin's bump actually took effect in the
+# vendored archive -- re-checked on every run, so a later change reverting
+# the pin fails closed instead of shipping quietly (see ../policy-demo).
+policy:
+  vendor-constraints:
+    - package: rsc.io/quote
+      ecosystem: go
+      version: "1.5.2"
+      reason: "demo: confirms the vendor-pin above actually took effect"

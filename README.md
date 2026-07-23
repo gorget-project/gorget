@@ -242,3 +242,10 @@ mypy src/gorget
 
 Tests that shell out to a real `rpmspec` are marked `integration` and are
 skipped automatically when `rpmspec` isn't on `PATH`.
+
+Run every example under `examples/` in one shot (sets up `.venv` if needed,
+runs each demo's setup script, then runs gorget against each pipeline YAML):
+
+```bash
+./run-examples.sh
+```
