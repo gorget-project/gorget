@@ -1,0 +1,8 @@
+fetch:
+  - type: spec-source
+    index: 0
+verify:
+  - type: gpg-signature
+    target: "foo-1.2.3.tar.gz"
+    signature: "foo-1.2.3.tar.gz.asc"
+    keyring: "example-project.gpg"

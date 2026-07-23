@@ -1,6 +1,9 @@
 from gorget.config.schema import (
+    AcceptedChecksumEntry,
     BuildUiStep,
+    ChecksumFileStep,
     GitStep,
+    GpgSignatureStep,
     PipelineSpec,
     RunStep,
     SpecSourceStep,
@@ -23,6 +26,7 @@ def test_pipeline_spec_defaults_are_empty():
     assert spec.policy.rules == {}
     assert spec.patches.entries == []
     assert spec.post.steps == []
+    assert spec.accepted_checksums.entries == []
 
 
 def test_spec_update_step_defaults():
@@ -84,3 +88,24 @@ def test_toolchain_entry_fields():
     entry = ToolchainEntry(name="go", version="1.22.0")
     assert entry.name == "go"
     assert entry.version == "1.22.0"
+
+
+def test_gpg_signature_step_requires_target_signature_keyring():
+    step = GpgSignatureStep(
+        target="foo.tar.gz", signature="foo.tar.gz.asc", keyring="example.gpg"
+    )
+    assert step.target == "foo.tar.gz"
+    assert step.signature == "foo.tar.gz.asc"
+    assert step.keyring == "example.gpg"
+
+
+def test_checksum_file_step_defaults():
+    step = ChecksumFileStep(target="foo.tar.gz", checksums_file="SHASUMS256.txt")
+    assert step.algorithm == "sha256"
+
+
+def test_accepted_checksum_entry_fields():
+    entry = AcceptedChecksumEntry(file="foo.tar.gz", checksum="deadbeef", reason="republished")
+    assert entry.file == "foo.tar.gz"
+    assert entry.checksum == "deadbeef"
+    assert entry.reason == "republished"

@@ -15,6 +15,9 @@ import yaml
 from gorget.config.schema import (
     FETCH_STEP_TYPES,
     TRANSFORM_STEP_TYPES,
+    VERIFY_STEP_TYPES,
+    AcceptedChecksumEntry,
+    AcceptedChecksumsSection,
     FetchStep,
     MacroSubstitution,
     PatchesSection,
@@ -28,6 +31,7 @@ from gorget.config.schema import (
     VendorModule,
     VendorPinEntry,
     VerifySection,
+    VerifyStep,
 )
 from gorget.config.substitution import SubstitutionVars, walk_and_substitute
 from gorget.exceptions import GorgetConfigError
@@ -43,6 +47,7 @@ _KNOWN_TOP_LEVEL_KEYS = {
     "policy",
     "patches",
     "post",
+    "accepted-checksums",
 }
 
 
@@ -120,6 +125,34 @@ def _parse_toolchain_entry(raw_entry: object) -> ToolchainEntry:
         raise GorgetConfigError(f"Invalid toolchain entry: {exc}") from exc
 
 
+def _parse_verify_step(raw_step: object) -> VerifyStep:
+    if not isinstance(raw_step, dict):
+        raise GorgetConfigError(f"Each verify step must be a mapping, got: {raw_step!r}")
+    step = _snake_case_keys(raw_step)
+    step_type = step.pop("type", None)
+    if step_type not in VERIFY_STEP_TYPES:
+        raise GorgetConfigError(
+            f"Unknown verify step type: {step_type!r} (expected one of "
+            f"{sorted(VERIFY_STEP_TYPES)})"
+        )
+    step_cls = VERIFY_STEP_TYPES[step_type]
+    try:
+        return step_cls(**step)
+    except TypeError as exc:
+        raise GorgetConfigError(f"Invalid {step_type} verify step: {exc}") from exc
+
+
+def _parse_accepted_checksum_entry(raw_entry: object) -> AcceptedChecksumEntry:
+    if not isinstance(raw_entry, dict):
+        raise GorgetConfigError(
+            f"Each accepted-checksums entry must be a mapping, got: {raw_entry!r}"
+        )
+    try:
+        return AcceptedChecksumEntry(**_snake_case_keys(raw_entry))
+    except TypeError as exc:
+        raise GorgetConfigError(f"Invalid accepted-checksums entry: {exc}") from exc
+
+
 def parse_pipeline_spec(raw: dict) -> PipelineSpec:
     unknown_keys = set(raw) - _KNOWN_TOP_LEVEL_KEYS
     for key in sorted(unknown_keys):
@@ -140,15 +173,28 @@ def parse_pipeline_spec(raw: dict) -> PipelineSpec:
         raise GorgetConfigError("The 'toolchain' section must be a list of entries")
     toolchain_entries = [_parse_toolchain_entry(entry) for entry in raw_toolchain]
 
+    raw_verify = raw.get("verify", [])
+    if not isinstance(raw_verify, list):
+        raise GorgetConfigError("The 'verify' section must be a list of steps")
+    verify_steps = [_parse_verify_step(step) for step in raw_verify]
+
+    raw_accepted_checksums = raw.get("accepted-checksums", [])
+    if not isinstance(raw_accepted_checksums, list):
+        raise GorgetConfigError("The 'accepted-checksums' section must be a list of entries")
+    accepted_checksum_entries = [
+        _parse_accepted_checksum_entry(entry) for entry in raw_accepted_checksums
+    ]
+
     return PipelineSpec(
         package=raw.get("package"),
         fetch=fetch_steps,
         transform=TransformSection(steps=transform_steps),
         toolchain=ToolchainSection(entries=toolchain_entries),
-        verify=_parse_list_section(raw, "verify", VerifySection, "steps"),
+        verify=VerifySection(steps=verify_steps),
         policy=_parse_dict_section(raw, "policy", PolicySection, "rules"),
         patches=_parse_list_section(raw, "patches", PatchesSection, "entries"),
         post=_parse_list_section(raw, "post", PostSection, "steps"),
+        accepted_checksums=AcceptedChecksumsSection(entries=accepted_checksum_entries),
     )
 
 

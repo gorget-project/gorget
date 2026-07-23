@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from gorget.fetch.base import FetchedArtifact, artifact_report_dict
 
@@ -12,9 +13,19 @@ class StageResult:
     name: str
     status: str  # "success" | "skipped"
     reason: str | None = None
+    # Per-check results (currently only Verify populates this) -- None for
+    # every other stage, which only report at the whole-stage granularity.
+    details: list[dict] | None = None
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "status": self.status, "reason": self.reason}
+        result: dict[str, Any] = {
+            "name": self.name,
+            "status": self.status,
+            "reason": self.reason,
+        }
+        if self.details is not None:
+            result["details"] = self.details
+        return result
 
 
 @dataclass(kw_only=True)

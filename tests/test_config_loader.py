@@ -5,7 +5,9 @@ import pytest
 from gorget.config.loader import build_pipeline_spec, load_yaml, parse_pipeline_spec
 from gorget.config.schema import (
     BuildUiStep,
+    ChecksumFileStep,
     GitStep,
+    GpgSignatureStep,
     RunStep,
     SpecSourceStep,
     SpecUpdateStep,
@@ -54,8 +56,16 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert spec.toolchain.entries[0].name == "go"
     assert spec.toolchain.entries[0].version == "1.22"
 
-    # verify/policy/patches/post remain inert raw passthrough this story.
     assert len(spec.verify.steps) == 1
+    assert isinstance(spec.verify.steps[0], GpgSignatureStep)
+    assert spec.verify.steps[0].target == "example-1.2.3.tar.gz"
+    assert spec.verify.steps[0].keyring == "example.gpg"
+
+    assert len(spec.accepted_checksums.entries) == 1
+    assert spec.accepted_checksums.entries[0].file == "example-1.2.2.tar.gz"
+    assert spec.accepted_checksums.entries[0].checksum == "deadbeef"
+
+    # policy/patches/post remain inert raw passthrough this story.
     assert spec.policy.rules["vendor-constraints"]["go"]["minimum"] == "1.20"
     assert len(spec.patches.entries) == 1
     assert len(spec.post.steps) == 1
@@ -126,6 +136,43 @@ def test_unknown_transform_type_raises_config_error():
         build_pipeline_spec(
             FIXTURES / "unknown-transform-type.yaml", substitution_vars=make_vars()
         )
+
+
+def test_verify_gpg_signature_step_parses():
+    spec = build_pipeline_spec(
+        FIXTURES / "verify-gpg-signature.yaml", substitution_vars=make_vars()
+    )
+    step = spec.verify.steps[0]
+    assert isinstance(step, GpgSignatureStep)
+    assert step.target == "foo-1.2.3.tar.gz"
+    assert step.signature == "foo-1.2.3.tar.gz.asc"
+    assert step.keyring == "example-project.gpg"
+
+
+def test_verify_checksum_file_step_parses():
+    spec = build_pipeline_spec(
+        FIXTURES / "verify-checksum-file.yaml", substitution_vars=make_vars()
+    )
+    step = spec.verify.steps[0]
+    assert isinstance(step, ChecksumFileStep)
+    assert step.target == "foo-1.2.3.tar.gz"
+    assert step.checksums_file == "SHASUMS256.txt"
+    assert step.algorithm == "sha256"
+
+
+def test_unknown_verify_type_raises_config_error():
+    with pytest.raises(GorgetConfigError, match="Unknown verify step type"):
+        build_pipeline_spec(FIXTURES / "unknown-verify-type.yaml", substitution_vars=make_vars())
+
+
+def test_verify_section_must_be_a_list():
+    with pytest.raises(GorgetConfigError, match="'verify' section must be a list"):
+        parse_pipeline_spec({"verify": {"type": "gpg-signature"}})
+
+
+def test_accepted_checksums_section_must_be_a_list():
+    with pytest.raises(GorgetConfigError, match="'accepted-checksums' section must be a list"):
+        parse_pipeline_spec({"accepted-checksums": {"file": "x"}})
 
 
 def test_transform_section_must_be_a_list():
