@@ -45,6 +45,7 @@ def _fake_clone(args, cwd=None):
 
 
 def test_shallow_clone_of_tag_uses_branch_and_depth(tmp_path, mocker):
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mock_run = mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
     step = GitStep(repo="https://example.com/repo.git", ref="v1.2.3", shallow=True)
     artifacts = GitHandler().run(step, make_ctx(tmp_path))
@@ -61,6 +62,7 @@ def test_shallow_clone_of_tag_uses_branch_and_depth(tmp_path, mocker):
 
 
 def test_shallow_clone_of_sha_ref_falls_back_to_partial_clone(tmp_path, mocker):
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mock_run = mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
     step = GitStep(repo="https://example.com/repo.git", ref="abc1234", shallow=True)
     GitHandler().run(step, make_ctx(tmp_path))
@@ -72,6 +74,7 @@ def test_shallow_clone_of_sha_ref_falls_back_to_partial_clone(tmp_path, mocker):
 
 
 def test_full_clone_performs_explicit_checkout(tmp_path, mocker):
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mock_run = mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
     step = GitStep(repo="https://example.com/repo.git", ref="main", shallow=False)
     GitHandler().run(step, make_ctx(tmp_path))
@@ -85,6 +88,7 @@ def test_full_clone_performs_explicit_checkout(tmp_path, mocker):
 
 
 def test_archive_excludes_dot_git_directory(tmp_path, mocker):
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
     step = GitStep(repo="https://example.com/repo.git", ref="v1.0.0", shallow=True)
     artifacts = GitHandler().run(step, make_ctx(tmp_path))
@@ -93,6 +97,25 @@ def test_archive_excludes_dot_git_directory(tmp_path, mocker):
         names = tar.getnames()
     assert any(name.endswith("README.md") for name in names)
     assert not any(".git" in Path(name).parts for name in names)
+
+
+def test_archive_members_use_commit_timestamp_not_checkout_time(tmp_path, mocker):
+    """Regression test for non-reproducible archives: `tarfile.add()` used to
+    preserve each file's live filesystem mtime from the checkout (i.e. wall-clock
+    clone time), so re-fetching an unchanged ref produced a different checksum
+    every run. Every member should now carry the commit's own timestamp instead.
+    """
+    mock_commit_timestamp = mocker.patch(
+        "gorget.fetch.git.commit_timestamp", return_value=1700000000
+    )
+    mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
+    step = GitStep(repo="https://example.com/repo.git", ref="v1.0.0", shallow=True)
+    artifacts = GitHandler().run(step, make_ctx(tmp_path))
+
+    mock_commit_timestamp.assert_called_once()
+    with tarfile.open(artifacts[0].path) as tar:
+        mtimes = {member.mtime for member in tar.getmembers()}
+    assert mtimes == {1700000000}
 
 
 def test_subdir_archives_only_that_subdirectory(tmp_path, mocker):
@@ -104,6 +127,7 @@ def test_subdir_archives_only_that_subdirectory(tmp_path, mocker):
             (dest / "sub" / "inner.txt").write_text("x")
         return _ok()
 
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mocker.patch("gorget.fetch.git.run", side_effect=_clone_with_subdir)
     step = GitStep(repo="https://example.com/repo.git", ref="v1.0.0", shallow=True, subdir="sub")
     artifacts = GitHandler().run(step, make_ctx(tmp_path))

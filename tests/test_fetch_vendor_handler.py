@@ -31,6 +31,7 @@ def test_vendor_requires_a_preceding_source_dir(tmp_path):
 
 
 def test_vendor_single_module_produces_archive(tmp_path, mocker):
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
@@ -55,6 +56,7 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
 
 
 def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "etcd"
     source_dir.mkdir()
 
@@ -85,6 +87,61 @@ def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
     assert any(n.endswith("etcdctl/etcdctl.txt") for n in names)
 
 
+def test_vendor_archive_members_use_source_commit_timestamp(tmp_path, mocker):
+    """Regression test: vendor archives were stamped with each file's live
+    filesystem mtime (module download/install wall-clock time), so re-running
+    the same fetch produced a different checksum every time. Members should now
+    carry the source checkout's commit timestamp instead.
+    """
+    mock_commit_timestamp = mocker.patch(
+        "gorget.fetch.vendor.commit_timestamp", return_value=1700000000
+    )
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+
+    def fake_vendor(module_dir, toolchain=()):
+        vendor_dir = module_dir / "vendor"
+        vendor_dir.mkdir(parents=True, exist_ok=True)
+        (vendor_dir / "modules.txt").write_text("example.com/x v1.0.0")
+        return vendor_dir
+
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+    )
+    step = VendorStep(ecosystem="go")
+    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+
+    mock_commit_timestamp.assert_called_once_with(source_dir)
+    with tarfile.open(artifacts[0].path) as tar:
+        mtimes = {member.mtime for member in tar.getmembers()}
+    assert mtimes == {1700000000}
+
+
+def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    source_dir = tmp_path / "etcd"
+    source_dir.mkdir()
+
+    def fake_vendor(module_dir, toolchain=()):
+        module_dir.mkdir(parents=True, exist_ok=True)
+        vendor_dir = module_dir / "vendor"
+        vendor_dir.mkdir()
+        (vendor_dir / "modules.txt").write_text("example.com/x v1.0.0")
+        return vendor_dir
+
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+    )
+    step = VendorStep(ecosystem="go", archive_name="etcd-vendor.tar.bz2")
+    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+
+    assert artifacts[0].output_name == "etcd-vendor.tar.bz2"
+    assert artifacts[0].path.read_bytes()[:3] == b"BZh"
+    with tarfile.open(artifacts[0].path, "r:bz2") as tar:
+        names = tar.getnames()
+    assert any(name.endswith("modules.txt") for name in names)
+
+
 def test_vendor_dry_run_skips_ecosystem_and_combine(tmp_path, mocker):
     mock_vendor = Mock()
     mocker.patch("gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
@@ -95,6 +152,7 @@ def test_vendor_dry_run_skips_ecosystem_and_combine(tmp_path, mocker):
 
 
 def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 

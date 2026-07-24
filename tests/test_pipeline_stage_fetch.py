@@ -38,6 +38,7 @@ def _fake_clone(args, cwd=None):
 
 
 def test_fetch_stage_syncs_source_dir_into_state(tmp_path, mocker):
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
     ctx = make_run_ctx(tmp_path)
     state = make_state(tmp_path / "work")
@@ -63,7 +64,9 @@ def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mo
     # entries are threaded through but wrap_command() is currently a no-op.
     # (FetchStage.run() itself never calls verify_installed() -- that only
     # happens once, up front, in PipelineRunner.)
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
 
     def _fake_go_vendor(args, cwd=None):
         (Path(cwd) / "vendor").mkdir(parents=True, exist_ok=True)
