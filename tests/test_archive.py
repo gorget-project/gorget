@@ -1,3 +1,4 @@
+import os
 import shutil
 import tarfile
 
@@ -34,6 +35,62 @@ def test_make_tar_gz_excludes_git_directory(tmp_path):
         names = tar.getnames()
     assert "pkg/file.txt" in names
     assert not any(".git" in name for name in names)
+
+
+def test_make_tar_gz_mtime_stamps_every_member(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("hello")
+    (src / "sub").mkdir()
+    (src / "sub" / "b.txt").write_text("world")
+    os.utime(src / "a.txt", (12345, 12345))
+    os.utime(src / "sub" / "b.txt", (67890, 67890))
+
+    dest = tmp_path / "archive.tar.gz"
+    make_tar_gz(src, dest, arcname="pkg", mtime=42)
+
+    with tarfile.open(dest) as tar:
+        mtimes = {member.mtime for member in tar.getmembers()}
+    assert mtimes == {42}
+
+
+def test_make_tar_gz_gzip_header_timestamp_is_pinned(tmp_path):
+    """Regression test: gzip's own container header embeds a wall-clock
+    timestamp by default (independent of any tar member mtime), so even with
+    every tar member normalized, two runs built at different real times used to
+    emit different bytes overall. The gzip header's mtime field (bytes 4-7) must
+    always be pinned, not just the tar members inside it.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("hello")
+
+    dest = tmp_path / "archive.tar.gz"
+    make_tar_gz(src, dest, arcname="pkg", mtime=999)
+
+    header_mtime = int.from_bytes(dest.read_bytes()[4:8], "little")
+    assert header_mtime == 0
+
+
+def test_make_tar_gz_is_byte_identical_across_runs_with_different_source_mtimes(tmp_path):
+    """End-to-end reproducibility check combining both fixes: identical content
+    from two different source directories, with different filesystem mtimes,
+    must produce byte-identical archives when the same `mtime` is requested.
+    """
+
+    def build(offset, dest_name):
+        src = tmp_path / f"src-{offset}"
+        src.mkdir()
+        (src / "a.txt").write_text("hello")
+        os.utime(src / "a.txt", (1000 + offset, 1000 + offset))
+        os.utime(src, (1000 + offset, 1000 + offset))
+        dest = tmp_path / dest_name
+        make_tar_gz(src, dest, arcname="pkg", mtime=999)
+        return dest.read_bytes()
+
+    first = build(0, "first.tar.gz")
+    second = build(3600, "second.tar.gz")
+    assert first == second
 
 
 def test_extract_tar_gz_round_trips_make_tar_gz(tmp_path):

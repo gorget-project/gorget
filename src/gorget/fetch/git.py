@@ -15,6 +15,7 @@ from gorget.config.schema import GitStep
 from gorget.exceptions import GorgetTransientError
 from gorget.fetch.base import FetchContext, FetchedArtifact, build_artifact
 from gorget.util.archive import make_tar_gz
+from gorget.util.git import commit_timestamp
 from gorget.util.subprocess_run import run
 
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
@@ -39,7 +40,8 @@ class GitHandler:
             self._clone(step, clone_dir)
             ctx.source_dir = clone_dir
             src = (clone_dir / step.subdir) if step.subdir else clone_dir
-            make_tar_gz(src, archive_path, arcname=f"{ctx.vars.package}-{step.ref}")
+            mtime = commit_timestamp(clone_dir)
+            make_tar_gz(src, archive_path, arcname=f"{ctx.vars.package}-{step.ref}", mtime=mtime)
 
         return [build_artifact(archive_path, archive_name, step.repo, ctx.dry_run)]
 

@@ -82,6 +82,7 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
     # entries are threaded through but wrap_command() is currently a no-op.
     # (TransformStage.run() itself never calls verify_installed() -- that
     # only happens once, up front, in PipelineRunner.)
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 

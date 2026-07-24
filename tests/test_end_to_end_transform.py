@@ -70,6 +70,8 @@ def _fake_run(calls):
 
 
 def test_git_fetch_then_vendor_pin_then_vendor(tmp_path, mocker):
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
     calls = []
     fake_run = _fake_run(calls)
     mocker.patch("gorget.fetch.git.run", side_effect=fake_run)

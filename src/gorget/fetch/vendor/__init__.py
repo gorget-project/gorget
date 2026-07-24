@@ -17,6 +17,7 @@ from gorget.fetch.vendor.combine import combine_vendor_archives
 from gorget.fetch.vendor.composer import ComposerVendor
 from gorget.fetch.vendor.go import GoVendor
 from gorget.fetch.vendor.npm import NpmVendor
+from gorget.util.git import commit_timestamp
 
 _ECOSYSTEMS: dict[str, VendorEcosystem] = {
     "go": GoVendor(),
@@ -42,6 +43,7 @@ class VendorHandler:
                 (module, ecosystem.vendor(ctx.source_dir / module.path, ctx.toolchain))
                 for module in step.modules
             ]
-            combine_vendor_archives(module_outputs, archive_path)
+            mtime = commit_timestamp(ctx.source_dir)
+            combine_vendor_archives(module_outputs, archive_path, mtime=mtime)
 
         return [build_artifact(archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run)]
