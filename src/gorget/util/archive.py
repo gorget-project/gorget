@@ -21,6 +21,18 @@ GZIP_SUFFIXES = (".tar.gz", ".tgz")
 BZ2_SUFFIXES = (".tar.bz2", ".tbz2")
 
 
+def strip_archive_suffix(filename: str) -> str:
+    """Strip a known tar/compression suffix (`.tar.gz`, `.tar.bz2`, etc.) from
+    `filename`, leaving the bare name -- e.g. `helm-4.2.3` from
+    `helm-4.2.3.tar.gz`. Used to derive an archive's internal top-level
+    directory from its own output filename, so the two always agree.
+    """
+    for suffix in (*GZIP_SUFFIXES, *BZ2_SUFFIXES):
+        if filename.endswith(suffix):
+            return filename[: -len(suffix)]
+    return filename
+
+
 def compression_kind(path: Path) -> str:
     """Derive the compression scheme ("gz" or "bz2") from `path`'s extension,
     so an archive's actual bytes always match what its filename claims.
