@@ -42,7 +42,12 @@ class VendorHandler:
             module_outputs = [
                 (
                     module,
-                    ecosystem.vendor(ctx.source_dir / module.path, ctx.toolchain, ctx.package_dir),
+                    ecosystem.vendor(
+                        ctx.source_dir / module.path,
+                        ctx.toolchain,
+                        ctx.package_dir,
+                        module.use_workspace,
+                    ),
                 )
                 for module in step.modules
             ]

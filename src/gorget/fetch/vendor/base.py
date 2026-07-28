@@ -31,6 +31,7 @@ class VendorEcosystem(Protocol):
         module_dir: Path,
         toolchain: Sequence[ToolchainEntry] = (),
         package_dir: Path | None = None,
+        use_workspace: bool = True,
     ) -> Path:
         """Run the ecosystem's vendor command against `module_dir` and return the
         path to the produced vendor directory.
@@ -40,5 +41,11 @@ class VendorEcosystem(Protocol):
         fetched upstream checkout being vendored. Only the `go` ecosystem
         currently uses it (to read go-vendor-tools.toml); other ecosystems
         accept and ignore it.
+
+        `use_workspace` is also go-specific: when `module_dir` has its own
+        go.work, `False` forces GOWORK=off (isolated single-module vendor)
+        instead of `go work vendor` (combined workspace vendor) -- e.g.
+        prometheus deliberately excludes workspace members like
+        compliance/internal/tools from its vendor archive.
         """
         ...
