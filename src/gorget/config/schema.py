@@ -56,6 +56,11 @@ class GitStep:
 class VendorModule:
     path: str = "."
     name: str | None = None
+    # Go-specific: force GOWORK=off for this module even if it has its own
+    # go.work (e.g. prometheus deliberately excludes workspace members like
+    # compliance/internal/tools from its vendor archive). Ignored for other
+    # ecosystems and for modules with no go.work at all.
+    use_workspace: bool = True
 
 
 @dataclass(frozen=True, kw_only=True)

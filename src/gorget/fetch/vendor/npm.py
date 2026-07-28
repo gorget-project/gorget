@@ -15,6 +15,7 @@ class NpmVendor:
         module_dir: Path,
         toolchain: Sequence[ToolchainEntry] = (),
         package_dir: Path | None = None,
+        use_workspace: bool = True,
     ) -> Path:
         cmd = ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"]
         result = run(wrap_command(cmd, toolchain), cwd=module_dir)

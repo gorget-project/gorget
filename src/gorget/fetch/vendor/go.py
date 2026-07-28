@@ -53,6 +53,7 @@ class GoVendor:
         module_dir: Path,
         toolchain: Sequence[ToolchainEntry] = (),
         package_dir: Path | None = None,
+        use_workspace: bool = True,
     ) -> Path:
         config = _load_archive_config(package_dir)
 
@@ -73,9 +74,16 @@ class GoVendor:
         # own go.work) would otherwise be swept into that ancestor's
         # workspace mode too -- force GOWORK=off for every command in that
         # case so vendoring stays scoped to just this module, matching how
-        # these packages are actually built (e.g. etcd/prometheus's spec
-        # itself sets GOWORK=off for the equivalent build-time step).
-        use_go_work = (module_dir / "go.work").is_file()
+        # these packages are actually built (e.g. etcd's spec itself sets
+        # GOWORK=off for the equivalent build-time step).
+        #
+        # `use_workspace=False` forces the same GOWORK=off override even when
+        # go.work IS directly in module_dir -- some packages have a workspace
+        # but deliberately don't want it applied to their vendor archive
+        # (e.g. prometheus explicitly excludes workspace members like
+        # compliance/internal/tools; confirmed `go work vendor` pulls them in
+        # while `GOWORK=off go mod vendor` doesn't).
+        use_go_work = use_workspace and (module_dir / "go.work").is_file()
         env = None if use_go_work else {"GOWORK": "off"}
         if use_go_work:
             commands.append(["go", "work", "vendor"])

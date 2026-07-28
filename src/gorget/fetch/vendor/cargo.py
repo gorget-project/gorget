@@ -15,6 +15,7 @@ class CargoVendor:
         module_dir: Path,
         toolchain: Sequence[ToolchainEntry] = (),
         package_dir: Path | None = None,
+        use_workspace: bool = True,
     ) -> Path:
         vendor_dir = module_dir / "vendor"
         cmd = ["cargo", "vendor", str(vendor_dir)]

@@ -35,7 +35,7 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
-    def fake_vendor(module_dir, toolchain=(), package_dir=None):
+    def fake_vendor(module_dir, toolchain=(), package_dir=None, use_workspace=True):
         module_dir.mkdir(parents=True, exist_ok=True)
         (module_dir / "go.sum").write_text("checksums")
         vendor_dir = module_dir / "vendor"
@@ -60,7 +60,7 @@ def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
     source_dir = tmp_path / "etcd"
     source_dir.mkdir()
 
-    def fake_vendor(module_dir, toolchain=(), package_dir=None):
+    def fake_vendor(module_dir, toolchain=(), package_dir=None, use_workspace=True):
         module_dir.mkdir(parents=True, exist_ok=True)
         vendor_dir = module_dir / "vendor"
         vendor_dir.mkdir()
@@ -99,7 +99,7 @@ def test_vendor_archive_members_use_source_commit_timestamp(tmp_path, mocker):
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
-    def fake_vendor(module_dir, toolchain=(), package_dir=None):
+    def fake_vendor(module_dir, toolchain=(), package_dir=None, use_workspace=True):
         vendor_dir = module_dir / "vendor"
         vendor_dir.mkdir(parents=True, exist_ok=True)
         (vendor_dir / "modules.txt").write_text("example.com/x v1.0.0")
@@ -122,7 +122,7 @@ def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
     source_dir = tmp_path / "etcd"
     source_dir.mkdir()
 
-    def fake_vendor(module_dir, toolchain=(), package_dir=None):
+    def fake_vendor(module_dir, toolchain=(), package_dir=None, use_workspace=True):
         module_dir.mkdir(parents=True, exist_ok=True)
         vendor_dir = module_dir / "vendor"
         vendor_dir.mkdir()
@@ -156,7 +156,7 @@ def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
-    def fake_vendor(module_dir, toolchain=(), package_dir=None):
+    def fake_vendor(module_dir, toolchain=(), package_dir=None, use_workspace=True):
         vendor_dir = module_dir / "vendor"
         vendor_dir.mkdir(parents=True)
         (vendor_dir / "x.txt").write_text("x")
@@ -167,4 +167,27 @@ def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
     step = VendorStep(ecosystem="go")
     toolchain = [ToolchainEntry(name="go", version="1.22.0")]
     VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir, toolchain=toolchain))
-    mock_vendor.assert_called_once_with(source_dir / ".", toolchain, tmp_path)
+    mock_vendor.assert_called_once_with(source_dir / ".", toolchain, tmp_path, True)
+
+
+def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
+    """Regression test: a module can have its own go.work but still need
+    GOWORK=off forced (e.g. prometheus deliberately excludes workspace
+    members like compliance/internal/tools from its vendor archive).
+    VendorModule.use_workspace=False must reach the ecosystem's vendor() call.
+    """
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+
+    def fake_vendor(module_dir, toolchain=(), package_dir=None, use_workspace=True):
+        vendor_dir = module_dir / "vendor"
+        vendor_dir.mkdir(parents=True)
+        (vendor_dir / "x.txt").write_text("x")
+        return vendor_dir
+
+    mock_vendor = Mock(side_effect=fake_vendor)
+    mocker.patch("gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
+    step = VendorStep(ecosystem="go", modules=[VendorModule(path=".", use_workspace=False)])
+    VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+    mock_vendor.assert_called_once_with(source_dir / ".", [], tmp_path, False)

@@ -15,6 +15,7 @@ class ComposerVendor:
         module_dir: Path,
         toolchain: Sequence[ToolchainEntry] = (),
         package_dir: Path | None = None,
+        use_workspace: bool = True,
     ) -> Path:
         cmd = ["composer", "install", "--no-dev", "--no-scripts", "--no-interaction"]
         result = run(wrap_command(cmd, toolchain), cwd=module_dir)

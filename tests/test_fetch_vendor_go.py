@@ -81,6 +81,24 @@ def test_go_vendor_forces_gowork_off_when_module_is_under_an_ancestor_workspace(
     ]
 
 
+def test_go_vendor_use_workspace_false_forces_gowork_off_even_at_workspace_root(tmp_path, mocker):
+    """Regression test: some packages have a go.work at the module root but
+    deliberately don't want it applied to their vendor archive -- confirmed
+    empirically for prometheus, which excludes workspace members like
+    compliance/internal/tools (`go work vendor` pulls them in;
+    `GOWORK=off go mod vendor` doesn't). `use_workspace=False` must force the
+    isolated single-module path even though go.work is right here in
+    `module_dir`, not just in an ancestor.
+    """
+    (tmp_path / "go.work").touch()
+    mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+    GoVendor().vendor(tmp_path, use_workspace=False)
+    assert mock_run.call_args_list == [
+        mocker.call(["go", "mod", "tidy"], cwd=tmp_path, env=_OFF),
+        mocker.call(["go", "mod", "vendor"], cwd=tmp_path, env=_OFF),
+    ]
+
+
 def test_go_vendor_missing_config_file_behaves_like_no_package_dir(tmp_path, mocker):
     package_dir = tmp_path / "pkg"
     package_dir.mkdir()
