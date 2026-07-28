@@ -40,7 +40,10 @@ class VendorHandler:
                     "pipeline to establish a source checkout to vendor against"
                 )
             module_outputs = [
-                (module, ecosystem.vendor(ctx.source_dir / module.path, ctx.toolchain))
+                (
+                    module,
+                    ecosystem.vendor(ctx.source_dir / module.path, ctx.toolchain, ctx.package_dir),
+                )
                 for module in step.modules
             ]
             mtime = commit_timestamp(ctx.source_dir)

@@ -107,7 +107,12 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
     assert result.status == "success"
     assert len(state.artifacts) == 1
     assert state.artifacts[0].output_name == "foo-vendor.tar.gz"
-    mock_run.assert_called_once_with(["go", "mod", "vendor"], cwd=source_dir)
+    # `go mod tidy` runs before `go mod vendor` by default (matching
+    # go-vendor-tools' own default), even with no go-vendor-tools.toml present.
+    assert mock_run.call_args_list == [
+        mocker.call(["go", "mod", "tidy"], cwd=source_dir),
+        mocker.call(["go", "mod", "vendor"], cwd=source_dir),
+    ]
 
 
 def test_syncs_source_dir_back_to_state_after_extraction(tmp_path, mocker):

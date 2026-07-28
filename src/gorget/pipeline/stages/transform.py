@@ -72,6 +72,7 @@ class TransformStage:
             vars=ctx.vars,
             toolchain=spec.toolchain.entries,
             dry_run=ctx.dry_run,
+            package_dir=ctx.package_dir,
         )
         for step in spec.transform.steps:
             handler = _HANDLERS[type(step)]

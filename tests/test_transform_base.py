@@ -19,6 +19,7 @@ def make_ctx(work_dir, source_dir=None):
         ),
         toolchain=[],
         dry_run=False,
+        package_dir=work_dir,
     )
 
 

@@ -10,7 +10,12 @@ from gorget.util.subprocess_run import run
 
 
 class ComposerVendor:
-    def vendor(self, module_dir: Path, toolchain: Sequence[ToolchainEntry] = ()) -> Path:
+    def vendor(
+        self,
+        module_dir: Path,
+        toolchain: Sequence[ToolchainEntry] = (),
+        package_dir: Path | None = None,
+    ) -> Path:
         cmd = ["composer", "install", "--no-dev", "--no-scripts", "--no-interaction"]
         result = run(wrap_command(cmd, toolchain), cwd=module_dir)
         if result.returncode != 0:

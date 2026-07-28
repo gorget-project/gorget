@@ -28,6 +28,7 @@ class TransformContext:
     vars: SubstitutionVars
     toolchain: list[ToolchainEntry]
     dry_run: bool
+    package_dir: Path
 
 
 class TransformStepHandler(Protocol):
