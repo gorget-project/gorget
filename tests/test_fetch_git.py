@@ -87,6 +87,24 @@ def test_full_clone_performs_explicit_checkout(tmp_path, mocker):
     assert checkout_args == ["git", "checkout", "main"]
 
 
+def test_archive_internal_prefix_uses_bare_version_not_ref(tmp_path, mocker):
+    """Regression test: the archive's internal top-level directory must match
+    RPM's `%{name}-%{version}` convention (no `v` prefix), since that's what
+    `%setup`/`%autosetup` extracts into. `step.ref` needs the tag's own prefix
+    to check out (e.g. "v1.2.3"), but the archive prefix must come from the
+    bare version instead, or the build's %prep fails to find the directory.
+    """
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
+    step = GitStep(repo="https://example.com/repo.git", ref="v1.2.3", shallow=True)
+    artifacts = GitHandler().run(step, make_ctx(tmp_path))
+
+    with tarfile.open(artifacts[0].path) as tar:
+        names = tar.getnames()
+    assert any(name.startswith("foo-1.2.3/") for name in names)
+    assert not any(name.startswith("foo-v1.2.3/") for name in names)
+
+
 def test_archive_excludes_dot_git_directory(tmp_path, mocker):
     mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)

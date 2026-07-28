@@ -41,7 +41,12 @@ class GitHandler:
             ctx.source_dir = clone_dir
             src = (clone_dir / step.subdir) if step.subdir else clone_dir
             mtime = commit_timestamp(clone_dir)
-            make_tar_gz(src, archive_path, arcname=f"{ctx.vars.package}-{step.ref}", mtime=mtime)
+            # arcname must match RPM's %{name}-%{version} convention (no `v` prefix),
+            # not `step.ref` -- refs need the tag's own prefix to check out (e.g.
+            # "v1.2.3"), but the archive's internal directory is what %setup/%autosetup
+            # extracts into, and a stray "v" there breaks the build.
+            arcname = f"{ctx.vars.package}-{ctx.vars.version}"
+            make_tar_gz(src, archive_path, arcname=arcname, mtime=mtime)
 
         return [build_artifact(archive_path, archive_name, step.repo, ctx.dry_run)]
 
