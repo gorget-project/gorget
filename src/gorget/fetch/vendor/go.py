@@ -63,19 +63,40 @@ class GoVendor:
                 for import_path, version in config.dependency_overrides.items()
             ),
         ]
-        if config.tidy:
-            commands.append(["go", "mod", "tidy"])
-        commands.append(["go", "mod", "vendor"])
+        # A workspace vendors all its modules together into one vendor/ dir at
+        # the workspace root: `go mod tidy`/`go mod vendor` refuse to run at
+        # all in workspace mode ("cannot be run in workspace mode. Run 'go
+        # work vendor' ... or set 'GOWORK=off'"). Go finds the *nearest*
+        # go.work by searching upward from cwd, so a module that's a
+        # subdirectory of a larger workspace (e.g. etcd's per-submodule
+        # archives, vendored independently even though the repo root has its
+        # own go.work) would otherwise be swept into that ancestor's
+        # workspace mode too -- force GOWORK=off for every command in that
+        # case so vendoring stays scoped to just this module, matching how
+        # these packages are actually built (e.g. etcd/prometheus's spec
+        # itself sets GOWORK=off for the equivalent build-time step).
+        use_go_work = (module_dir / "go.work").is_file()
+        env = None if use_go_work else {"GOWORK": "off"}
+        if use_go_work:
+            commands.append(["go", "work", "vendor"])
+        else:
+            if config.tidy:
+                commands.append(["go", "mod", "tidy"])
+            commands.append(["go", "mod", "vendor"])
         commands.extend(config.post_commands)
 
         for command in commands:
-            self._run(command, module_dir, toolchain)
+            self._run(command, module_dir, toolchain, env)
         return module_dir / "vendor"
 
     def _run(
-        self, command: list[str], module_dir: Path, toolchain: Sequence[ToolchainEntry]
+        self,
+        command: list[str],
+        module_dir: Path,
+        toolchain: Sequence[ToolchainEntry],
+        env: dict[str, str] | None,
     ) -> None:
-        result = run(wrap_command(command, toolchain), cwd=module_dir)
+        result = run(wrap_command(command, toolchain), cwd=module_dir, env=env)
         if result.returncode != 0:
             raise GorgetTransientError(
                 f"{shlex.join(command)} failed in {module_dir}: {result.stderr.strip()}"
