@@ -14,7 +14,7 @@ from pathlib import Path
 from gorget.config.schema import GitStep
 from gorget.exceptions import GorgetTransientError
 from gorget.fetch.base import FetchContext, FetchedArtifact, build_artifact
-from gorget.util.archive import make_tar_gz
+from gorget.util.archive import make_tar_gz, strip_archive_suffix
 from gorget.util.git import commit_timestamp
 from gorget.util.subprocess_run import run
 
@@ -32,7 +32,7 @@ def _slug(repo_url: str) -> str:
 
 class GitHandler:
     def run(self, step: GitStep, ctx: FetchContext) -> list[FetchedArtifact]:
-        archive_name = step.archive_name or f"{ctx.vars.package}-{step.ref}.tar.gz"
+        archive_name = step.archive_name or f"{ctx.vars.package}-{ctx.vars.version}.tar.gz"
         archive_path = ctx.work_dir / archive_name
 
         if not ctx.dry_run:
@@ -41,11 +41,14 @@ class GitHandler:
             ctx.source_dir = clone_dir
             src = (clone_dir / step.subdir) if step.subdir else clone_dir
             mtime = commit_timestamp(clone_dir)
-            # arcname must match RPM's %{name}-%{version} convention (no `v` prefix),
-            # not `step.ref` -- refs need the tag's own prefix to check out (e.g.
-            # "v1.2.3"), but the archive's internal directory is what %setup/%autosetup
-            # extracts into, and a stray "v" there breaks the build.
-            arcname = f"{ctx.vars.package}-{ctx.vars.version}"
+            # The archive's internal directory is what %setup/%autosetup
+            # extracts into, so it must match the archive's own filename, not
+            # `ctx.vars.package` (the spec's filename stem, which can legally
+            # differ from the archive's actual basename -- e.g. helm4's spec
+            # is named helm.spec, or kubernetes1.35's archives are just
+            # "kubernetes-*" since that's the upstream repo name, not the
+            # RPM's own versioned package name).
+            arcname = strip_archive_suffix(archive_name)
             make_tar_gz(src, archive_path, arcname=arcname, mtime=mtime)
 
         return [build_artifact(archive_path, archive_name, step.repo, ctx.dry_run)]

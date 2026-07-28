@@ -56,9 +56,12 @@ def test_shallow_clone_of_tag_uses_branch_and_depth(tmp_path, mocker):
     assert "--depth" in clone_args and "1" in clone_args
     assert mock_run.call_count == 1  # branch clone alone checks out the ref, no separate checkout
 
-    assert artifacts[0].output_name == "foo-v1.2.3.tar.gz"
+    # Default output_name uses the bare version, not the ref -- consistent
+    # with the archive's internal directory (see
+    # test_archive_internal_prefix_uses_bare_version_not_ref below).
+    assert artifacts[0].output_name == "foo-1.2.3.tar.gz"
     assert artifacts[0].checksum is not None
-    assert (tmp_path / "foo-v1.2.3.tar.gz").exists()
+    assert (tmp_path / "foo-1.2.3.tar.gz").exists()
 
 
 def test_shallow_clone_of_sha_ref_falls_back_to_partial_clone(tmp_path, mocker):
@@ -103,6 +106,32 @@ def test_archive_internal_prefix_uses_bare_version_not_ref(tmp_path, mocker):
         names = tar.getnames()
     assert any(name.startswith("foo-1.2.3/") for name in names)
     assert not any(name.startswith("foo-v1.2.3/") for name in names)
+
+
+def test_archive_internal_prefix_follows_explicit_archive_name_not_package_var(tmp_path, mocker):
+    """Regression test: `ctx.vars.package` (the spec's filename stem) can
+    legally differ from an archive's real basename -- e.g. helm4's spec is
+    named helm.spec, or kubernetes1.35's upstream tarballs are just
+    "kubernetes-*" since that's the plain repo name, not the RPM's own
+    versioned package name. The archive's internal directory must follow
+    whatever `archive_name` the pipeline actually declares, not `ctx.vars.
+    package`, or %setup/%autosetup looks for the wrong directory.
+    """
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
+    step = GitStep(
+        repo="https://example.com/repo.git",
+        ref="v1.2.3",
+        shallow=True,
+        archive_name="helm-1.2.3.tar.gz",
+    )
+    artifacts = GitHandler().run(step, make_ctx(tmp_path))
+
+    assert artifacts[0].output_name == "helm-1.2.3.tar.gz"
+    with tarfile.open(artifacts[0].path) as tar:
+        names = tar.getnames()
+    assert any(name.startswith("helm-1.2.3/") for name in names)
+    assert not any(name.startswith("foo-1.2.3/") for name in names)
 
 
 def test_archive_excludes_dot_git_directory(tmp_path, mocker):
