@@ -10,7 +10,12 @@ from gorget.util.subprocess_run import run
 
 
 class NpmVendor:
-    def vendor(self, module_dir: Path, toolchain: Sequence[ToolchainEntry] = ()) -> Path:
+    def vendor(
+        self,
+        module_dir: Path,
+        toolchain: Sequence[ToolchainEntry] = (),
+        package_dir: Path | None = None,
+    ) -> Path:
         cmd = ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"]
         result = run(wrap_command(cmd, toolchain), cwd=module_dir)
         if result.returncode != 0:

@@ -22,11 +22,23 @@ class VendorRunContext(Protocol):
     dry_run: bool
     source_dir: Path | None
     toolchain: list[ToolchainEntry]
+    package_dir: Path
 
 
 class VendorEcosystem(Protocol):
-    def vendor(self, module_dir: Path, toolchain: Sequence[ToolchainEntry] = ()) -> Path:
+    def vendor(
+        self,
+        module_dir: Path,
+        toolchain: Sequence[ToolchainEntry] = (),
+        package_dir: Path | None = None,
+    ) -> Path:
         """Run the ecosystem's vendor command against `module_dir` and return the
         path to the produced vendor directory.
+
+        `package_dir` is the RPM package directory (containing the spec,
+        go-vendor-tools.toml, etc.) -- distinct from `module_dir`, the freshly
+        fetched upstream checkout being vendored. Only the `go` ecosystem
+        currently uses it (to read go-vendor-tools.toml); other ecosystems
+        accept and ignore it.
         """
         ...

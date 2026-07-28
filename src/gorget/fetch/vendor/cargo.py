@@ -10,7 +10,12 @@ from gorget.util.subprocess_run import run
 
 
 class CargoVendor:
-    def vendor(self, module_dir: Path, toolchain: Sequence[ToolchainEntry] = ()) -> Path:
+    def vendor(
+        self,
+        module_dir: Path,
+        toolchain: Sequence[ToolchainEntry] = (),
+        package_dir: Path | None = None,
+    ) -> Path:
         vendor_dir = module_dir / "vendor"
         cmd = ["cargo", "vendor", str(vendor_dir)]
         result = run(wrap_command(cmd, toolchain), cwd=module_dir)

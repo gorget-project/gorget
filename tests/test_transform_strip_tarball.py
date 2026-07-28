@@ -21,6 +21,7 @@ def make_ctx(work_dir, dry_run=False):
         ),
         toolchain=[],
         dry_run=dry_run,
+        package_dir=work_dir,
     )
 
 

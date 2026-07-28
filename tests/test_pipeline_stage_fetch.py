@@ -86,4 +86,9 @@ def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mo
 
     FetchStage().run(ctx, spec, state)
 
-    mock_go_run.assert_called_once_with(["go", "mod", "vendor"], cwd=state.source_dir)
+    # `go mod tidy` runs before `go mod vendor` by default (matching
+    # go-vendor-tools' own default), even with no go-vendor-tools.toml present.
+    assert mock_go_run.call_args_list == [
+        mocker.call(["go", "mod", "tidy"], cwd=state.source_dir),
+        mocker.call(["go", "mod", "vendor"], cwd=state.source_dir),
+    ]
