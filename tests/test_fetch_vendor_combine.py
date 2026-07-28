@@ -60,14 +60,24 @@ def test_combine_multi_submodule_uses_one_directory_per_module(tmp_path):
     assert any(name.endswith("etcdctl/b.go") for name in names)
 
 
-def test_combine_falls_back_to_sanitized_path_when_name_missing(tmp_path):
+def test_combine_single_module_uses_bare_vendor_regardless_of_path(tmp_path):
+    """Regression test: found via etcd, which vendors server/etcdctl/etcdutl
+    as three *independent* `vendor:` steps -- each with exactly one module at
+    a non-trivial path (e.g. "server") -- each producing its own archive.
+    %prep extracts each with `-C server` (etc.), so the archive itself must
+    already be bare "vendor/" -- a "server/vendor/" wrapper would double the
+    "server/" nesting after extraction. A lone module with no explicit name
+    has nothing to disambiguate against, so its path shouldn't affect the
+    archive layout at all.
+    """
     vendor_dir = _make_vendor_dir(tmp_path / "nested" / "path", "vendor", {"x.txt": "x"})
     archive_path = tmp_path / "out.tar.gz"
     combine_vendor_archives([(VendorModule(path="nested/path"), vendor_dir)], archive_path)
 
     with tarfile.open(archive_path) as tar:
         names = tar.getnames()
-    assert any(name.startswith("nested_path") for name in names)
+    assert any(name == "vendor" or name.startswith("vendor/") for name in names)
+    assert not any(name.startswith("nested_path") for name in names)
 
 
 def test_combine_honors_tar_bz2_extension_and_actually_bzip2_compresses(tmp_path):
