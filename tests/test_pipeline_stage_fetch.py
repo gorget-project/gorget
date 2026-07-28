@@ -68,7 +68,7 @@ def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mo
     mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
     mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
 
-    def _fake_go_vendor(args, cwd=None):
+    def _fake_go_vendor(args, cwd=None, env=None):
         (Path(cwd) / "vendor").mkdir(parents=True, exist_ok=True)
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
@@ -89,6 +89,6 @@ def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mo
     # `go mod tidy` runs before `go mod vendor` by default (matching
     # go-vendor-tools' own default), even with no go-vendor-tools.toml present.
     assert mock_go_run.call_args_list == [
-        mocker.call(["go", "mod", "tidy"], cwd=state.source_dir),
-        mocker.call(["go", "mod", "vendor"], cwd=state.source_dir),
+        mocker.call(["go", "mod", "tidy"], cwd=state.source_dir, env={"GOWORK": "off"}),
+        mocker.call(["go", "mod", "vendor"], cwd=state.source_dir, env={"GOWORK": "off"}),
     ]

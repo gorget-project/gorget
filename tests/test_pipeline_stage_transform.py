@@ -86,7 +86,7 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
-    def fake_go_vendor(args, cwd=None):
+    def fake_go_vendor(args, cwd=None, env=None):
         (cwd / "vendor").mkdir(parents=True, exist_ok=True)
         (cwd / "vendor" / "modules.txt").write_text("x v1")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
@@ -110,8 +110,8 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
     # `go mod tidy` runs before `go mod vendor` by default (matching
     # go-vendor-tools' own default), even with no go-vendor-tools.toml present.
     assert mock_run.call_args_list == [
-        mocker.call(["go", "mod", "tidy"], cwd=source_dir),
-        mocker.call(["go", "mod", "vendor"], cwd=source_dir),
+        mocker.call(["go", "mod", "tidy"], cwd=source_dir, env={"GOWORK": "off"}),
+        mocker.call(["go", "mod", "vendor"], cwd=source_dir, env={"GOWORK": "off"}),
     ]
 
 

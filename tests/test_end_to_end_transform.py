@@ -48,7 +48,7 @@ def make_ctx(tmp_path, pipeline_yaml, dry_run=False):
 
 
 def _fake_run(calls):
-    def run(args, cwd=None):
+    def run(args, cwd=None, env=None):
         calls.append((args, cwd))
         if args[:2] == ["git", "clone"]:
             dest = Path(args[-1])
@@ -97,7 +97,7 @@ def test_git_fetch_then_vendor_pin_then_vendor(tmp_path, mocker):
     # Both the git-fetched source tarball and the vendor archive it produced
     # end up as artifacts; the vendor one reflects the pinned dependency.
     output_names = {a.output_name for a in report.artifacts}
-    assert output_names == {"foo-v1.2.3.tar.gz", "foo-vendor.tar.gz"}
+    assert output_names == {"foo-1.2.3.tar.gz", "foo-vendor.tar.gz"}
 
     # Artifacts' original paths live under the pipeline's scratch work_dir,
     # already cleaned up by the time PipelineRunner.run() returns -- read the
