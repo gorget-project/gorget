@@ -4,9 +4,19 @@ from gorget.config.substitution import SubstitutionVars, substitute_string, walk
 from gorget.exceptions import GorgetConfigError
 
 
-def make_vars(version="1.2.3", old_version="1.2.2", package="foo", spec_file="foo.spec"):
+def make_vars(
+    version="1.2.3",
+    old_version="1.2.2",
+    package="foo",
+    spec_file="foo.spec",
+    package_dir="/pkg",
+):
     return SubstitutionVars(
-        version=version, old_version=old_version, package=package, spec_file=spec_file
+        version=version,
+        old_version=old_version,
+        package=package,
+        spec_file=spec_file,
+        package_dir=package_dir,
     )
 
 
@@ -29,10 +39,11 @@ def test_version_component_derivation(version, major, minor, patch):
 def test_substitute_string_replaces_all_known_tokens():
     v = make_vars()
     result = substitute_string(
-        "${PACKAGE}-${VERSION} (was ${OLD_VERSION}) major=${VERSION_MAJOR} spec=${SPEC_FILE}",
+        "${PACKAGE}-${VERSION} (was ${OLD_VERSION}) major=${VERSION_MAJOR} "
+        "spec=${SPEC_FILE} dir=${PACKAGE_DIR}",
         v,
     )
-    assert result == "foo-1.2.3 (was 1.2.2) major=1 spec=foo.spec"
+    assert result == "foo-1.2.3 (was 1.2.2) major=1 spec=foo.spec dir=/pkg"
 
 
 def test_substitute_string_old_version_none_becomes_empty():

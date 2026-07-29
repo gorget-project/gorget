@@ -52,6 +52,7 @@ def build_run_context(args: argparse.Namespace) -> RunContext:
         old_version=args.old_version,
         package=package_name,
         spec_file=spec_path.name,
+        package_dir=str(package_dir),
     )
 
     return RunContext(

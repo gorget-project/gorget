@@ -219,8 +219,11 @@ HUM-4990/HUM-4789 for the ongoing discussion.
 ## Variable substitution
 
 `${VERSION}`, `${VERSION_MAJOR}`, `${VERSION_MINOR}`, `${VERSION_PATCH}`,
-`${OLD_VERSION}`, `${PACKAGE}`, `${SPEC_FILE}` are available in any string
-value in the pipeline YAML.
+`${OLD_VERSION}`, `${PACKAGE}`, `${SPEC_FILE}`, `${PACKAGE_DIR}` are available
+in any string value in the pipeline YAML. `${PACKAGE_DIR}` is the absolute
+path to the package's directory (i.e. `--package-dir`) -- useful in `run:`
+step scripts that need to reach files living alongside the spec file, such
+as a patch applied before running a build tool.
 
 ## Local development
 
