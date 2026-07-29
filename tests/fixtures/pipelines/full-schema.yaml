@@ -44,8 +44,8 @@ patches:
   - file: 0001-fix.patch
     classification: cve-fix
 post:
-  - type: extract-vendor-versions
-    ecosystem: go
+  - type: run
+    command: ["./generate-bundled-provides.py", "${VERSION}"]
 accepted-checksums:
   - file: "example-1.2.2.tar.gz"
     checksum: "deadbeef"

@@ -1,0 +1,3 @@
+post:
+  - type: not-a-real-type
+    foo: bar

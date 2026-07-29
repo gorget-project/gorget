@@ -1,9 +1,9 @@
 """Dataclass model for the ``*.source-pipeline.yaml`` schema.
 
-The ``fetch``, ``transform``, ``toolchain``, ``verify``, and ``policy`` sections have
-real behavior. The remaining top-level sections (``patches``, ``post``) round-trip as
-untyped passthrough structures so the parser doesn't choke on a full pipeline YAML,
-without this story guessing at shapes a future story owns.
+The ``fetch``, ``transform``, ``toolchain``, ``verify``, ``policy``, and ``post``
+sections have real behavior. ``patches`` still round-trips as an untyped passthrough
+structure so the parser doesn't choke on a full pipeline YAML, without guessing at a
+shape a future story owns.
 """
 
 from __future__ import annotations
@@ -225,8 +225,25 @@ class PatchesSection:
 
 
 @dataclass(frozen=True, kw_only=True)
+class PostRunStep:
+    type: Literal["run"] = "run"
+    command: list[str] = field(default_factory=list)
+
+
+# Room for a future ecosystem-aware step (e.g. `bundled-provides`, sketched in
+# the design doc) that extracts dependency versions from a vendor manifest and
+# splices them into the spec between markers -- `run` alone already covers
+# every real case migrated so far.
+PostStep = PostRunStep
+
+POST_STEP_TYPES: dict[str, type] = {
+    "run": PostRunStep,
+}
+
+
+@dataclass(frozen=True, kw_only=True)
 class PostSection:
-    steps: list[dict] = field(default_factory=list)
+    steps: list[PostStep] = field(default_factory=list)
 
 
 @dataclass(frozen=True, kw_only=True)

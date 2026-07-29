@@ -1,0 +1,56 @@
+"""`PostStage`: runs after Policy, before Emit. The one place gorget writes
+into `--package-dir` rather than the scratch work dir -- for metadata
+extracted from validated (fetched/verified/policy-checked) artifacts that
+needs to land in the tracked spec file, e.g. refreshing a generated
+`Provides:` block from a vendored dependency manifest.
+
+Every other stage treats `--package-dir` as read-only by convention (nothing
+in gorget's own code ever writes there, though nothing enforces it at the OS
+level either now that native invocation dropped the old podman `:ro` bind
+mount). `post:` is the one stage where writing there is the actual point,
+made explicit by the pipeline YAML declaring a `post:` section at all -- an
+auditor reading the YAML sees exactly which packages mutate their own
+package directory and how.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import ClassVar
+
+from gorget.config.schema import PipelineSpec, PostRunStep
+from gorget.context import RunContext
+from gorget.exceptions import GorgetTransientError
+from gorget.pipeline.result import StageResult
+from gorget.pipeline.state import StageState
+from gorget.toolchain import wrap_command
+from gorget.util.subprocess_run import run
+
+logger = logging.getLogger("gorget.pipeline")
+
+
+class PostStage:
+    name: ClassVar[str] = "post"
+
+    def run(self, ctx: RunContext, spec: PipelineSpec, state: StageState) -> StageResult:
+        if not spec.post.steps:
+            return StageResult(name=self.name, status="skipped", reason="no post steps declared")
+        if ctx.dry_run:
+            # This stage exists specifically to write into --package-dir --
+            # never do that under --dry-run, which the rest of the pipeline
+            # treats as "touch nothing real."
+            return StageResult(name=self.name, status="skipped", reason="dry-run")
+
+        for step in spec.post.steps:
+            self._run_step(step, ctx, spec)
+
+        return StageResult(name=self.name, status="success")
+
+    def _run_step(self, step: PostRunStep, ctx: RunContext, spec: PipelineSpec) -> None:
+        logger.debug("post step: %s", step)
+        result = run(wrap_command(step.command, spec.toolchain.entries), cwd=ctx.package_dir)
+        if result.returncode != 0:
+            raise GorgetTransientError(
+                f"post step ({' '.join(step.command)}) failed in {ctx.package_dir}: "
+                f"{result.stderr.strip()}"
+            )

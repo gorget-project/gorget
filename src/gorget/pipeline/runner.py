@@ -1,9 +1,10 @@
-"""Orchestrates fetch -> transform -> verify -> policy -> emit.
+"""Orchestrates fetch -> transform -> verify -> policy -> post -> emit.
 
-`--dry-run` runs every stage for real except `EmitStage`, which is skipped
-entirely (no `/output` writes) -- each fetch-step handler already knows how to
-resolve/validate without touching the network or filesystem under dry-run
-(see `fetch/base.py`'s `build_artifact`).
+`--dry-run` runs every stage for real except `PostStage` and `EmitStage`,
+which are skipped entirely (no `--package-dir`/`--output-dir` writes) --
+each fetch-step handler already knows how to resolve/validate without
+touching the network or filesystem under dry-run (see `fetch/base.py`'s
+`build_artifact`).
 """
 
 from __future__ import annotations
@@ -21,12 +22,20 @@ from gorget.pipeline.stages.base import Stage
 from gorget.pipeline.stages.emit import EmitStage
 from gorget.pipeline.stages.fetch import FetchStage
 from gorget.pipeline.stages.policy import PolicyStage
+from gorget.pipeline.stages.post import PostStage
 from gorget.pipeline.stages.transform import TransformStage
 from gorget.pipeline.stages.verify import VerifyStage
 from gorget.pipeline.state import StageState
 from gorget.specfile import SpecFile
 
-STAGE_ORDER: list[type[Stage]] = [FetchStage, TransformStage, VerifyStage, PolicyStage, EmitStage]
+STAGE_ORDER: list[type[Stage]] = [
+    FetchStage,
+    TransformStage,
+    VerifyStage,
+    PolicyStage,
+    PostStage,
+    EmitStage,
+]
 
 logger = logging.getLogger("gorget.pipeline")
 
@@ -79,9 +88,10 @@ class PipelineRunner:
         return report
 
     def _build_initial_state(self, work_dir: Path, report: PipelineReport) -> StageState:
-        # The package directory is never written to during a pipeline run, so
-        # spec mutation (spec-update) always happens on a writable copy under
-        # the scratch work dir, never in place.
+        # spec-update mutates a writable copy under the scratch work dir,
+        # never the real package directory in place -- PostStage is the one
+        # stage that writes to --package-dir for real, deliberately, after
+        # everything else has run.
         work_spec_path = work_dir / self.ctx.spec_path.name
         work_spec_path.write_text(self.ctx.spec_path.read_text())
         return StageState(work_dir=work_dir, spec=SpecFile(work_spec_path), report=report)

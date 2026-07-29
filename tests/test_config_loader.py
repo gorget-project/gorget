@@ -8,6 +8,7 @@ from gorget.config.schema import (
     ChecksumFileStep,
     GitStep,
     GpgSignatureStep,
+    PostRunStep,
     RunStep,
     SpecSourceStep,
     SpecUpdateStep,
@@ -72,9 +73,12 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert spec.policy.audit is True
     assert spec.policy.license_compliance.disallowed == ["GPL-3.0-only"]
 
-    # patches/post remain inert raw passthrough this story.
+    # patches remains inert raw passthrough this story.
     assert len(spec.patches.entries) == 1
+
     assert len(spec.post.steps) == 1
+    assert isinstance(spec.post.steps[0], PostRunStep)
+    assert spec.post.steps[0].command == ["./generate-bundled-provides.py", "1.2.3"]
 
 
 def test_build_pipeline_spec_fetch_only():
@@ -142,6 +146,18 @@ def test_unknown_transform_type_raises_config_error():
         build_pipeline_spec(
             FIXTURES / "unknown-transform-type.yaml", substitution_vars=make_vars()
         )
+
+
+def test_unknown_post_type_raises_config_error():
+    with pytest.raises(GorgetConfigError, match="Unknown post step type"):
+        build_pipeline_spec(FIXTURES / "unknown-post-type.yaml", substitution_vars=make_vars())
+
+
+def test_post_run_step_parses():
+    spec = build_pipeline_spec(FIXTURES / "post-run.yaml", substitution_vars=make_vars())
+    step = spec.post.steps[0]
+    assert isinstance(step, PostRunStep)
+    assert step.command == ["./refresh-provides.py", "1.2.3"]
 
 
 def test_verify_gpg_signature_step_parses():
