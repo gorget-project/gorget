@@ -14,6 +14,7 @@ import yaml
 
 from gorget.config.schema import (
     FETCH_STEP_TYPES,
+    POST_STEP_TYPES,
     TRANSFORM_STEP_TYPES,
     VERIFY_STEP_TYPES,
     AcceptedChecksumEntry,
@@ -25,6 +26,7 @@ from gorget.config.schema import (
     PipelineSpec,
     PolicySection,
     PostSection,
+    PostStep,
     ToolchainEntry,
     ToolchainSection,
     TransformSection,
@@ -116,6 +118,22 @@ def _parse_transform_step(raw_step: object) -> TransformStep:
         return step_cls(**step)
     except TypeError as exc:
         raise GorgetConfigError(f"Invalid {step_type} transform step: {exc}") from exc
+
+
+def _parse_post_step(raw_step: object) -> PostStep:
+    if not isinstance(raw_step, dict):
+        raise GorgetConfigError(f"Each post step must be a mapping, got: {raw_step!r}")
+    step = _snake_case_keys(raw_step)
+    step_type = step.pop("type", None)
+    if step_type not in POST_STEP_TYPES:
+        raise GorgetConfigError(
+            f"Unknown post step type: {step_type!r} (expected one of {sorted(POST_STEP_TYPES)})"
+        )
+    step_cls = POST_STEP_TYPES[step_type]
+    try:
+        return step_cls(**step)
+    except TypeError as exc:
+        raise GorgetConfigError(f"Invalid {step_type} post step: {exc}") from exc
 
 
 def _parse_toolchain_entry(raw_entry: object) -> ToolchainEntry:
@@ -217,6 +235,11 @@ def parse_pipeline_spec(raw: dict) -> PipelineSpec:
         raise GorgetConfigError("The 'verify' section must be a list of steps")
     verify_steps = [_parse_verify_step(step) for step in raw_verify]
 
+    raw_post = raw.get("post", [])
+    if not isinstance(raw_post, list):
+        raise GorgetConfigError("The 'post' section must be a list of steps")
+    post_steps = [_parse_post_step(step) for step in raw_post]
+
     raw_accepted_checksums = raw.get("accepted-checksums", [])
     if not isinstance(raw_accepted_checksums, list):
         raise GorgetConfigError("The 'accepted-checksums' section must be a list of entries")
@@ -232,7 +255,7 @@ def parse_pipeline_spec(raw: dict) -> PipelineSpec:
         verify=VerifySection(steps=verify_steps),
         policy=_parse_policy_section(raw),
         patches=_parse_list_section(raw, "patches", PatchesSection, "entries"),
-        post=_parse_list_section(raw, "post", PostSection, "steps"),
+        post=PostSection(steps=post_steps),
         accepted_checksums=AcceptedChecksumsSection(entries=accepted_checksum_entries),
     )
 

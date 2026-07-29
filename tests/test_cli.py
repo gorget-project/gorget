@@ -37,7 +37,7 @@ def test_main_dry_run_prints_report_and_returns_zero(tmp_path, mocker, capsys):
     assert report["artifacts"][0]["output_name"] == "foo-1.2.3.tar.gz"
     assert report["artifacts"][0]["checksum"] is None
     stage_names = [s["name"] for s in report["stages"]]
-    assert stage_names == ["fetch", "transform", "verify", "policy", "emit"]
+    assert stage_names == ["fetch", "transform", "verify", "policy", "post", "emit"]
     assert not (tmp_path / "output").exists()
 
 
