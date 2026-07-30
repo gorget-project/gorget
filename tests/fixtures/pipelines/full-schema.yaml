@@ -45,6 +45,7 @@ patches:
     classification: cve-fix
 post:
   - type: run
+    artifacts: ["extra.tar.gz"]
     command: ["./generate-bundled-provides.py", "${VERSION}"]
 accepted-checksums:
   - file: "example-1.2.2.tar.gz"

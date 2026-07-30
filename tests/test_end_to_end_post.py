@@ -72,6 +72,38 @@ def test_git_fetch_then_post_writes_into_real_package_dir(tmp_path, mocker):
     assert (tmp_path / "post-marker.txt").read_text() == "1.2.3\n"
 
 
+ARTIFACT_PIPELINE_YAML = """
+fetch:
+  - type: git
+    repo: "https://example.com/example.git"
+    ref: "v${VERSION}"
+    archive_name: "foo-${VERSION}.tar.gz"
+post:
+  - type: run
+    artifacts: ["foo-${VERSION}.tar.gz"]
+    command: ["sh", "-c", "cat foo-${VERSION}.tar.gz > post-read.txt"]
+"""
+
+
+def test_post_artifacts_field_materializes_fetched_artifact_via_real_runner(tmp_path, mocker):
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
+    calls = []
+    mocker.patch("gorget.fetch.git.run", side_effect=_fake_git_clone(calls))
+
+    ctx = make_ctx(tmp_path, ARTIFACT_PIPELINE_YAML)
+    spec = resolve_pipeline_spec(ctx)
+    report = PipelineRunner(ctx, spec).run()
+
+    post_result = next(s for s in report.stages if s.name == "post")
+    assert post_result.status == "success"
+
+    # The fetched archive itself, and the post step's read of it, both land
+    # in the real --package-dir -- the archive only exists in gorget's
+    # scratch work_dir otherwise, which is gone by the time run() returns.
+    assert (tmp_path / "foo-1.2.3.tar.gz").exists()
+    assert (tmp_path / "post-read.txt").read_bytes() == (tmp_path / "foo-1.2.3.tar.gz").read_bytes()
+
+
 def test_dry_run_skips_post_and_leaves_package_dir_untouched(tmp_path, mocker):
     mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     calls = []
