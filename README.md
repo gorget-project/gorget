@@ -15,8 +15,12 @@ exactly how its sources are produced. When no pipeline YAML exists, gorget
 falls back to fetching every `Source` URL declared in the package's spec file.
 
 This is an early-stage implementation covering the **Fetch**, **Transform**,
-**Verify**, and **Policy** stages and the core framework (config parsing,
-variable substitution, the stage pipeline, and a minimal Emit).
+**Verify**, **Policy**, and **Post** stages and the core framework (config
+parsing, variable substitution, the stage pipeline, and a minimal Emit).
+
+## How-to guides
+
+- [Add a policy check to an existing pipeline](docs/how-to/add-a-policy-check.md)
 
 ## CLI interface
 
@@ -177,6 +181,23 @@ A package with none of the three configured gets a non-blocking "no policy
 configured" skip. All deterministic failures (`vendor-constraints`,
 `go mod verify`, `license-compliance`) are aggregated into one error, same as
 `verify:`.
+
+### `post:`
+
+Runs after `policy:`, before Emit. The one stage that intentionally writes
+into `--package-dir` rather than the scratch work dir -- for metadata that
+needs to land in the tracked spec file, e.g. refreshing a generated
+`Provides:` block from a vendored dependency manifest.
+
+```yaml
+post:
+  - type: run
+    command: ["./generate-bundled-provides.py", "${VERSION}"]
+```
+
+Each step's `command` runs with `--package-dir` as its working directory.
+Skipped entirely under `--dry-run` (nothing should write to the real package
+directory during a dry run) and when no `post:` steps are declared.
 
 ### `toolchain:`
 
