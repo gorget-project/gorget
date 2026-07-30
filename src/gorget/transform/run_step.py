@@ -1,5 +1,7 @@
 """`run` transform step: escape hatch for an arbitrary declared command, with
-declared output paths collected as new artifacts afterward.
+declared output paths collected as new artifacts afterward. `outputs:` covers
+names known upfront; `discovered-outputs:` covers names only known once the
+command has run (e.g. a version string it discovered from the source tree).
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ class RunHandler:
         if ctx.dry_run:
             return
 
-        source_dir = ensure_source_dir(ctx, state)
+        source_dir = ensure_source_dir(ctx, state, step.target)
         cwd = source_dir / step.path
         result = run(wrap_command(step.command, ctx.toolchain), cwd=cwd)
         if result.returncode != 0:
@@ -53,3 +55,37 @@ class RunHandler:
 
             description = f"run:{' '.join(step.command)}"
             state.artifacts.append(build_artifact(dest, archive_name, description, ctx.dry_run))
+
+        if step.discovered_outputs is not None:
+            self._collect_discovered_outputs(step, cwd, ctx, state)
+
+    def _collect_discovered_outputs(
+        self, step: RunStep, cwd: Path, ctx: TransformContext, state: StageState
+    ) -> None:
+        manifest_path = cwd / step.discovered_outputs
+        if not manifest_path.exists():
+            raise GorgetConfigError(f"discovered-outputs manifest not found: {manifest_path}")
+
+        for line_no, raw_line in enumerate(manifest_path.read_text().splitlines(), start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) != 2:
+                raise GorgetConfigError(
+                    f"{manifest_path} line {line_no}: expected "
+                    f"'<output_name>\\t<path>', got {raw_line!r}"
+                )
+            output_name, rel_path = parts
+            src_path = cwd / rel_path
+            if not src_path.exists():
+                raise GorgetConfigError(
+                    f"{manifest_path} line {line_no}: discovered output not found: {src_path}"
+                )
+
+            dest = ctx.work_dir / output_name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src_path, dest)
+
+            description = f"run:{' '.join(step.command)} (discovered)"
+            state.artifacts.append(build_artifact(dest, output_name, description, ctx.dry_run))

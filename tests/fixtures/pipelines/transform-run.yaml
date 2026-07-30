@@ -5,5 +5,7 @@ fetch:
 transform:
   - type: run
     command: ["make", "generate"]
+    target: "example-1.2.3.tar.gz"
     outputs:
       - "generated/"
+    discovered-outputs: "gorget-discovered.tsv"
