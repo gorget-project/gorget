@@ -89,6 +89,36 @@ the same step if you have some outputs of each kind.
 discovered output needs to be a directory, `tar` it yourself in the script
 and list the resulting archive's path in the manifest instead.
 
+## A related problem: verifying pristine bytes before a later transform mutates them
+
+If a later step in the same `transform:` list modifies the artifact you just
+discovered something from (e.g. a `strip-tarball` step removing a vendored
+dependency before repacking), you can't rely on `verify: checksum-file` to
+check it against a published checksums file -- `verify:` always runs after
+*all* of `transform:`, so by the time it runs, the bytes it would hash are
+already the modified ones, not what upstream published.
+
+`run:`'s `artifacts:` (distinct from `target:`, which gives you an
+*extracted* view) materializes an artifact's raw, unextracted bytes into the
+step's cwd, so you can verify it yourself first:
+
+```yaml
+transform:
+  - type: run
+    artifacts: ["node-v22.9.0.tar.gz", "SHASUMS256.txt"]
+    command:
+      - "sh"
+      - "-c"
+      - |
+        set -euo pipefail
+        grep " node-v22.9.0.tar.gz$" SHASUMS256.txt | sha256sum --check --strict -
+  - type: strip-tarball
+    target: "node-v22.9.0.tar.gz"
+    paths: ["*/deps/openssl"]
+```
+
+Put the manual verification step *before* the one that mutates the artifact.
+
 ## 5. Test it
 
 ```bash

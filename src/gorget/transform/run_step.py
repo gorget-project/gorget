@@ -2,6 +2,10 @@
 declared output paths collected as new artifacts afterward. `outputs:` covers
 names known upfront; `discovered-outputs:` covers names only known once the
 command has run (e.g. a version string it discovered from the source tree).
+`artifacts:` materializes already-fetched artifacts' raw bytes into the
+step's cwd, e.g. for checksum-verifying one before a later transform step in
+the same list mutates it (verify: only runs after all of transform:, so it
+can't see pristine bytes once something upstream has already changed them).
 """
 
 from __future__ import annotations
@@ -31,6 +35,11 @@ class RunHandler:
 
         source_dir = ensure_source_dir(ctx, state, step.target)
         cwd = source_dir / step.path
+
+        for name in step.artifacts:
+            artifact = state.find_artifact(name)
+            shutil.copyfile(artifact.path, cwd / name)
+
         result = run(wrap_command(step.command, ctx.toolchain), cwd=cwd)
         if result.returncode != 0:
             raise GorgetTransientError(

@@ -9,3 +9,4 @@ transform:
     outputs:
       - "generated/"
     discovered-outputs: "gorget-discovered.tsv"
+    artifacts: ["checksums.txt"]
