@@ -20,6 +20,7 @@ parsing, variable substitution, the stage pipeline, and a minimal Emit).
 
 ## How-to guides
 
+- [Getting started: write your first source-pipeline.yaml](docs/how-to/getting-started.md)
 - [Add a policy check to an existing pipeline](docs/how-to/add-a-policy-check.md)
 
 ## CLI interface
