@@ -25,6 +25,7 @@ parsing, variable substitution, the stage pipeline, and a minimal Emit).
 - [Hand-patch a vendored dependency, and stop it from regressing](docs/how-to/hand-patch-and-enforce-a-dependency-version.md)
 - [Add a policy check to an existing pipeline](docs/how-to/add-a-policy-check.md)
 - [Add a post: step to refresh generated metadata](docs/how-to/add-a-post-step.md)
+- [Fetch a source whose URL you don't know until runtime](docs/how-to/discover-additional-sources.md)
 - [Debug a failing pipeline locally](docs/how-to/debug-a-failing-pipeline.md)
 
 ## CLI interface
@@ -79,7 +80,24 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 `vendor-pin`/`vendor`/`build-ui`/`run` all operate against a shared working
 source tree: a `git` fetch step's checkout if one ran, otherwise the sole
 fetched artifact gets extracted on first use (an error if there's more than
-one and no way to tell which to use).
+one and no way to tell which to use) -- unless a `run:` step declares
+`target:`, naming exactly which fetched artifact to extract instead (needed
+as soon as a pipeline fetches more than one artifact, e.g. a tarball plus its
+detached checksums file).
+
+`run:`'s `outputs:` archives files/directories whose name is known upfront.
+For a name only known once the command runs (e.g. a version string it
+discovered from the source tree), declare `discovered-outputs:` instead: a
+manifest file (relative to the step's cwd) the command writes, one
+`<output_name>\t<path>` pair per line:
+
+```yaml
+transform:
+  - type: run
+    target: "node-v22.9.0.tar.gz"
+    command: ["./discover-icu-version.sh"]
+    discovered-outputs: "discovered.tsv"   # each line: "<output_name>\t<path>"
+```
 
 ### `verify:`
 

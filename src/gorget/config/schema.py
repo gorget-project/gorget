@@ -126,6 +126,17 @@ class RunStep:
     command: list[str] = field(default_factory=list)
     path: str = "."
     outputs: list[str] = field(default_factory=list)
+    # Explicitly selects which fetched artifact to extract as the source tree,
+    # instead of relying on ensure_source_dir()'s "exactly one artifact"
+    # guess -- needed as soon as a pipeline fetches more than one artifact
+    # (e.g. a tarball plus its detached checksums file).
+    target: str | None = None
+    # Path (relative to this step's cwd) to a manifest the command writes,
+    # one "<output_name>\t<relative-path>" pair per line, for outputs whose
+    # name isn't known until the command runs (e.g. a version string
+    # discovered from the source tree). Complements the static `outputs:`
+    # above, which requires the name to be known upfront.
+    discovered_outputs: str | None = None
 
 
 # `vendor` is reused verbatim from the fetch schema: a `transform:` list can run

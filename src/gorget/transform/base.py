@@ -35,12 +35,24 @@ class TransformStepHandler(Protocol):
     def run(self, step: TransformStep, ctx: TransformContext, state: StageState) -> None: ...
 
 
-def ensure_source_dir(ctx: TransformContext, state: StageState) -> Path:
+def ensure_source_dir(ctx: TransformContext, state: StageState, target: str | None = None) -> Path:
     """Return the working source tree for steps that need one (vendor-pin,
     vendor, build-ui, run). Reuses a `git` fetch step's checkout if one ran;
     otherwise extracts the sole fetched artifact, since there's no other way to
     guess which one to use if there's more than one (or none).
+
+    `target`, when given, names a specific fetched artifact to extract instead
+    -- required as soon as a pipeline fetches more than one artifact, since the
+    "exactly one" guess no longer applies. Extracted into its own target-keyed
+    scratch dir and returned directly, deliberately *not* cached into
+    `ctx.source_dir`, so an explicit `target` on one step can never leak into
+    a later step's implicit default.
     """
+    if target is not None:
+        artifact = state.find_artifact(target)
+        extract_dir = ctx.work_dir / "_transform_source" / target
+        extract_tar_gz(artifact.path, extract_dir)
+        return extract_dir
     if ctx.source_dir is not None:
         return ctx.source_dir
     if len(state.artifacts) != 1:
