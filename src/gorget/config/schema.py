@@ -137,6 +137,15 @@ class RunStep:
     # discovered from the source tree). Complements the static `outputs:`
     # above, which requires the name to be known upfront.
     discovered_outputs: str | None = None
+    # output_names of already-fetched artifacts to materialize into this
+    # step's cwd, raw and unextracted -- unlike `target:` (which extracts one
+    # artifact to use as the working tree), this is for a script that needs
+    # an artifact's actual bytes, e.g. to checksum-verify it itself before a
+    # later transform step mutates it (verify: always runs after all of
+    # transform:, so it can't check pristine bytes once something upstream
+    # of it in transform: has already changed them). Same idiom as
+    # `PostRunStep.artifacts`.
+    artifacts: list[str] = field(default_factory=list)
 
 
 # `vendor` is reused verbatim from the fetch schema: a `transform:` list can run

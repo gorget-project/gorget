@@ -26,11 +26,18 @@ class SpecSourceEntry:
 
 
 class SpecFile:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, sourcedir: Path | None = None):
         self.path = path
+        # Defaults to the spec's own directory, correct when `path` sits
+        # alongside its sources (the common case, and every existing caller
+        # except the pipeline runner's scratch copy). A spec that
+        # `%{load:%{_sourcedir}/...}`s a sibling macro file needs this pointed
+        # at the real --package-dir instead, since only the spec itself gets
+        # copied into gorget's scratch work dir for editing.
+        self._sourcedir = sourcedir if sourcedir is not None else path.parent
 
     def _base_defines(self) -> list[str]:
-        return ["--define", f"_sourcedir {self.path.parent}"]
+        return ["--define", f"_sourcedir {self._sourcedir}"]
 
     def _rpmspec_expand(self, spec_path: Path) -> str:
         result = run(["rpmspec", "-P", *self._base_defines(), str(spec_path)])

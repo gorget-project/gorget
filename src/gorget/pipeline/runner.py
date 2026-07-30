@@ -94,4 +94,5 @@ class PipelineRunner:
         # everything else has run.
         work_spec_path = work_dir / self.ctx.spec_path.name
         work_spec_path.write_text(self.ctx.spec_path.read_text())
-        return StageState(work_dir=work_dir, spec=SpecFile(work_spec_path), report=report)
+        spec = SpecFile(work_spec_path, sourcedir=self.ctx.package_dir)
+        return StageState(work_dir=work_dir, spec=spec, report=report)

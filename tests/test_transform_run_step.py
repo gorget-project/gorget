@@ -300,3 +300,43 @@ def test_discovered_outputs_missing_referenced_file_raises_config_error(tmp_path
     step = RunStep(command=["discover.sh"], discovered_outputs="manifest.tsv")
     with pytest.raises(GorgetConfigError, match="discovered output not found"):
         RunHandler().run(step, ctx, state)
+
+
+def test_artifacts_materializes_raw_bytes_into_cwd_before_command_runs(tmp_path, mocker):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    raw_file = tmp_path / "raw-tarball.tar.gz"
+    raw_file.write_bytes(b"pristine upstream bytes")
+    artifact = FetchedArtifact(
+        path=raw_file, output_name="tarball.tar.gz", source_description="test", checksum=None
+    )
+
+    seen = {}
+
+    def fake_run(args, cwd=None):
+        seen["bytes"] = (cwd / "tarball.tar.gz").read_bytes()
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    mocker.patch("gorget.transform.run_step.run", side_effect=fake_run)
+    ctx = make_ctx(tmp_path / "work", source_dir=source_dir)
+    state = make_state(tmp_path / "work")
+    state.artifacts.append(artifact)
+
+    step = RunStep(command=["verify.sh"], artifacts=["tarball.tar.gz"])
+    RunHandler().run(step, ctx, state)
+
+    assert seen["bytes"] == b"pristine upstream bytes"
+
+
+def test_artifacts_names_unknown_artifact_raises_config_error(tmp_path, mocker):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    mocker.patch(
+        "gorget.transform.run_step.run",
+        return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+    )
+    ctx = make_ctx(tmp_path / "work", source_dir=source_dir)
+    state = make_state(tmp_path / "work")
+    step = RunStep(command=["verify.sh"], artifacts=["does-not-exist.tar.gz"])
+    with pytest.raises(GorgetConfigError, match="does-not-exist.tar.gz"):
+        RunHandler().run(step, ctx, state)

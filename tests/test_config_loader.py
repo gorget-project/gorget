@@ -142,6 +142,7 @@ def test_transform_run_step_parses():
     assert step.outputs == ["generated/"]
     assert step.target == "example-1.2.3.tar.gz"
     assert step.discovered_outputs == "gorget-discovered.tsv"
+    assert step.artifacts == ["checksums.txt"]
 
 
 def test_unknown_transform_type_raises_config_error():

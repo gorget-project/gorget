@@ -112,6 +112,24 @@ def test_apply_substitution_no_match_raises(tmp_path, mocker):
         SpecFile(spec_path).apply_substitution(sub, variables)
 
 
+def test_sourcedir_defaults_to_spec_parent(mocker):
+    mock_run = mocker.patch("gorget.specfile.run", return_value=fake_completed(stdout="ok"))
+    SpecFile(FIXTURES / "specs" / "simple.spec").sources()
+    assert f"_sourcedir {FIXTURES / 'specs'}" in mock_run.call_args.args[0]
+
+
+def test_sourcedir_override_used_instead_of_spec_parent(tmp_path, mocker):
+    package_dir = tmp_path / "package"
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+    spec_copy = scratch_dir / "foo.spec"
+    spec_copy.write_text("Name: foo\n")
+
+    mock_run = mocker.patch("gorget.specfile.run", return_value=fake_completed(stdout="ok"))
+    SpecFile(spec_copy, sourcedir=package_dir).sources()
+    assert f"_sourcedir {package_dir}" in mock_run.call_args.args[0]
+
+
 def test_rewrite_and_validate_failure_leaves_original_untouched(tmp_path, mocker):
     spec_path = tmp_path / "foo.spec"
     spec_path.write_text("Name: foo\nVersion: 1.0.0\n")
@@ -161,3 +179,28 @@ def test_set_version_real_rpmspec_round_trip(tmp_path):
     spec.set_version("9.9.9")
     assert spec.version() == "9.9.9"
     assert not (tmp_path / "simple.spec.gorget-tmp").exists()
+
+
+@pytest.mark.integration
+@requires_rpmspec
+def test_sourcedir_override_resolves_sibling_macro_load(tmp_path):
+    # Simulates gorget's real scratch-copy setup: only the spec itself is
+    # copied out of the real package directory, so `%{load:%{_sourcedir}/...}`
+    # can only resolve if `sourcedir` is pointed back at the original
+    # directory where the sibling macro file actually lives.
+    spec_path = tmp_path / "loads-sibling-macro.spec"
+    spec_path.write_text((FIXTURES / "specs" / "loads-sibling-macro.spec").read_text())
+
+    spec = SpecFile(spec_path, sourcedir=FIXTURES / "specs")
+    assert spec.version() == "1.0.0"
+
+
+@pytest.mark.integration
+@requires_rpmspec
+def test_omitting_sourcedir_override_fails_sibling_macro_load(tmp_path):
+    spec_path = tmp_path / "loads-sibling-macro.spec"
+    spec_path.write_text((FIXTURES / "specs" / "loads-sibling-macro.spec").read_text())
+
+    spec = SpecFile(spec_path)  # no override -- defaults to tmp_path, missing the macro file
+    with pytest.raises(GorgetTransientError, match="failed to load macro file"):
+        spec.version()
