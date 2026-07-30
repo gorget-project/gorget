@@ -3,7 +3,8 @@ import pytest
 from gorget.config.schema import PipelineSpec, PostRunStep, PostSection
 from gorget.config.substitution import SubstitutionVars
 from gorget.context import RunContext
-from gorget.exceptions import GorgetTransientError
+from gorget.exceptions import GorgetConfigError, GorgetTransientError
+from gorget.fetch.base import FetchedArtifact
 from gorget.pipeline.result import PipelineReport
 from gorget.pipeline.stages.post import PostStage
 from gorget.pipeline.state import StageState
@@ -81,4 +82,50 @@ def test_failing_step_raises_transient_error(tmp_path):
         post=PostSection(steps=[PostRunStep(command=["sh", "-c", "echo boom >&2; exit 1"])])
     )
     with pytest.raises(GorgetTransientError, match="boom"):
+        PostStage().run(ctx, spec, state)
+
+
+def test_declared_artifact_is_materialized_into_package_dir_before_command_runs(tmp_path):
+    package_dir = tmp_path / "package"
+    package_dir.mkdir()
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+    fetched = scratch_dir / "foo-1.2.3.tar.gz"
+    fetched.write_text("fake tarball bytes")
+
+    ctx = make_ctx(package_dir)
+    state = make_state(scratch_dir)
+    state.artifacts.append(
+        FetchedArtifact(
+            path=fetched,
+            output_name="foo-1.2.3.tar.gz",
+            source_description="test",
+            checksum=None,
+        )
+    )
+    spec = PipelineSpec(
+        post=PostSection(
+            steps=[
+                PostRunStep(
+                    artifacts=["foo-1.2.3.tar.gz"],
+                    command=["sh", "-c", "cat foo-1.2.3.tar.gz > read-output.txt"],
+                )
+            ]
+        )
+    )
+
+    result = PostStage().run(ctx, spec, state)
+
+    assert result.status == "success"
+    assert (package_dir / "foo-1.2.3.tar.gz").read_text() == "fake tarball bytes"
+    assert (package_dir / "read-output.txt").read_text() == "fake tarball bytes"
+
+
+def test_unknown_artifact_name_raises_config_error(tmp_path):
+    ctx = make_ctx(tmp_path)
+    state = make_state(tmp_path)
+    spec = PipelineSpec(
+        post=PostSection(steps=[PostRunStep(artifacts=["does-not-exist.tar.gz"], command=["true"])])
+    )
+    with pytest.raises(GorgetConfigError, match="does-not-exist.tar.gz"):
         PostStage().run(ctx, spec, state)

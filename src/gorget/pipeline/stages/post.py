@@ -11,11 +11,18 @@ mount). `post:` is the one stage where writing there is the actual point,
 made explicit by the pipeline YAML declaring a `post:` section at all -- an
 auditor reading the YAML sees exactly which packages mutate their own
 package directory and how.
+
+A step's `command` runs with `--package-dir` as its cwd, not the scratch
+`work_dir` fetched/vendored artifacts actually live in until Emit (which runs
+after Post) copies them out -- so a step that needs to read one declares it
+in `artifacts:`, and it's copied into `--package-dir` under its `output_name`
+immediately before the command runs.
 """
 
 from __future__ import annotations
 
 import logging
+import shutil
 from typing import ClassVar
 
 from gorget.config.schema import PipelineSpec, PostRunStep
@@ -42,11 +49,18 @@ class PostStage:
             return StageResult(name=self.name, status="skipped", reason="dry-run")
 
         for step in spec.post.steps:
-            self._run_step(step, ctx, spec)
+            self._run_step(step, ctx, spec, state)
 
         return StageResult(name=self.name, status="success")
 
-    def _run_step(self, step: PostRunStep, ctx: RunContext, spec: PipelineSpec) -> None:
+    def _run_step(
+        self, step: PostRunStep, ctx: RunContext, spec: PipelineSpec, state: StageState
+    ) -> None:
+        for name in step.artifacts:
+            artifact = state.find_artifact(name)
+            logger.debug("post step: materializing artifact %s into %s", name, ctx.package_dir)
+            shutil.copyfile(artifact.path, ctx.package_dir / name)
+
         logger.debug("post step: %s", step)
         result = run(wrap_command(step.command, spec.toolchain.entries), cwd=ctx.package_dir)
         if result.returncode != 0:

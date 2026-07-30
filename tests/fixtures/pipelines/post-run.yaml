@@ -1,3 +1,4 @@
 post:
   - type: run
+    artifacts: ["foo-${VERSION}.tar.gz"]
     command: ["./refresh-provides.py", "${VERSION}"]

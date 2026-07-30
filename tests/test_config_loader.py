@@ -79,6 +79,7 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert len(spec.post.steps) == 1
     assert isinstance(spec.post.steps[0], PostRunStep)
     assert spec.post.steps[0].command == ["./generate-bundled-provides.py", "1.2.3"]
+    assert spec.post.steps[0].artifacts == ["extra.tar.gz"]
 
 
 def test_build_pipeline_spec_fetch_only():
@@ -158,6 +159,14 @@ def test_post_run_step_parses():
     step = spec.post.steps[0]
     assert isinstance(step, PostRunStep)
     assert step.command == ["./refresh-provides.py", "1.2.3"]
+    assert step.artifacts == ["foo-1.2.3.tar.gz"]
+
+
+def test_post_run_step_artifacts_defaults_to_empty_list():
+    spec = parse_pipeline_spec(
+        {"post": [{"type": "run", "command": ["./refresh-provides.py"]}]}
+    )
+    assert spec.post.steps[0].artifacts == []
 
 
 def test_verify_gpg_signature_step_parses():

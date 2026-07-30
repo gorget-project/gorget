@@ -19,11 +19,30 @@ else in the file untouched:
 # END generated bundled Provides
 ```
 
-## 2. Write the script
+## 2. If the script needs to read what was fetched, declare it in `artifacts:`
 
-The script's job is just: figure out the right content, and rewrite
-everything between the markers. It runs with `--package-dir` as its working
-directory, so it can read/write the spec file directly:
+Most real scripts don't just reuse `${VERSION}` (that's already in the spec
+via `Version:` -- no `post:` step needed for that); they derive the
+generated content from the *fetched tarball itself*, e.g. a bundled
+dependency's version read out of a vendored manifest. That tarball isn't
+sitting in `--package-dir` when `post:` runs -- it's still in gorget's
+internal scratch work dir until Emit (which runs after Post) copies it out.
+Name it in `artifacts:` and gorget materializes it into `--package-dir`
+under its `output_name` immediately before the command runs:
+
+```yaml
+post:
+  - type: run
+    artifacts: ["${PACKAGE}-${VERSION}.tar.gz"]
+    command: ["./refresh-bundled-provides.sh", "${VERSION}"]
+```
+
+## 3. Write the script
+
+The script's job is: extract whatever it needs from the materialized
+artifact, and rewrite everything between the markers. It runs with
+`--package-dir` as its working directory, so both the artifact (from
+`artifacts:`) and the spec file are right there to read/write directly:
 
 ```bash
 #!/bin/sh
@@ -31,8 +50,11 @@ directory, so it can read/write the spec file directly:
 set -eu
 version="$1"
 spec="example.spec"
+tarball="example-${version}.tar.gz"
 
-awk -v version="$version" '
+lib_version="$(tar -xOf "$tarball" --wildcards '*/vendor/example-lib/VERSION')"
+
+awk -v version="$lib_version" '
   /# BEGIN generated bundled Provides/ { print; print "Provides: bundled(example-lib) = " version; skip=1; next }
   /# END generated bundled Provides/   { skip=0 }
   !skip
@@ -40,20 +62,8 @@ awk -v version="$version" '
 mv "$spec.tmp" "$spec"
 ```
 
-Real scripts typically derive the version from something more specific --
-e.g. a vendored dependency's own manifest -- rather than reusing the
-package's own `${VERSION}` as this toy example does; the marker-replacement
-mechanics stay the same either way.
-
-## 3. Declare the `post:` step
-
-```yaml
-post:
-  - type: run
-    command: ["./refresh-bundled-provides.sh", "${VERSION}"]
-```
-
-Multiple steps run in declared order if you need more than one script.
+Multiple steps run in declared order if you need more than one script; each
+declares its own `artifacts:` independently.
 
 ## 4. Know the two things that make `post:` different from `transform: run:`
 
@@ -69,13 +79,14 @@ Multiple steps run in declared order if you need more than one script.
 
 ## 5. Test it
 
-Run the script directly first, against a scratch copy of the spec, before
-wiring it into the pipeline at all -- this is the fastest way to iterate:
+Run the script directly first, against a scratch copy of the spec and the
+tarball it needs, before wiring it into the pipeline at all -- this is the
+fastest way to iterate:
 
 ```bash
-cp example.spec /tmp/example.spec.test
+cp example.spec example-1.2.3.tar.gz /tmp/
 (cd /tmp && /path/to/refresh-bundled-provides.sh 1.2.3)
-diff example.spec /tmp/example.spec.test
+diff example.spec /tmp/example.spec
 ```
 
 Once the script itself is right, run the full pipeline for real (not

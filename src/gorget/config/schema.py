@@ -228,6 +228,11 @@ class PatchesSection:
 class PostRunStep:
     type: Literal["run"] = "run"
     command: list[str] = field(default_factory=list)
+    # output_names of already-fetched/transformed artifacts this step needs to
+    # read -- materialized into --package-dir under their output_name before
+    # the command runs, since the command's cwd is --package-dir, not the
+    # scratch work_dir the artifact actually lives in until Emit.
+    artifacts: list[str] = field(default_factory=list)
 
 
 # Room for a future ecosystem-aware step (e.g. `bundled-provides`, sketched in

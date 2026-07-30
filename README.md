@@ -197,10 +197,16 @@ needs to land in the tracked spec file, e.g. refreshing a generated
 ```yaml
 post:
   - type: run
+    artifacts: ["${PACKAGE}-${VERSION}.tar.gz"]
     command: ["./generate-bundled-provides.py", "${VERSION}"]
 ```
 
-Each step's `command` runs with `--package-dir` as its working directory.
+Each step's `command` runs with `--package-dir` as its working directory --
+which is *not* where fetched/vendored artifacts live (they're in a scratch
+work dir until Emit, which runs after Post). A step that needs to read one
+declares its `output_name` in `artifacts:`; each is copied into
+`--package-dir` under that name immediately before the command runs.
+
 Skipped entirely under `--dry-run` (nothing should write to the real package
 directory during a dry run) and when no `post:` steps are declared.
 
