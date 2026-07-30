@@ -21,7 +21,11 @@ parsing, variable substitution, the stage pipeline, and a minimal Emit).
 ## How-to guides
 
 - [Getting started: write your first source-pipeline.yaml](docs/how-to/getting-started.md)
+- [Add source verification for a new upstream](docs/how-to/verify-a-new-upstream.md)
+- [Hand-patch a vendored dependency, and stop it from regressing](docs/how-to/hand-patch-and-enforce-a-dependency-version.md)
 - [Add a policy check to an existing pipeline](docs/how-to/add-a-policy-check.md)
+- [Add a post: step to refresh generated metadata](docs/how-to/add-a-post-step.md)
+- [Debug a failing pipeline locally](docs/how-to/debug-a-failing-pipeline.md)
 
 ## CLI interface
 
