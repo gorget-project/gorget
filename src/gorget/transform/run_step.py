@@ -66,12 +66,17 @@ class RunHandler:
             state.artifacts.append(build_artifact(dest, archive_name, description, ctx.dry_run))
 
         if step.discovered_outputs is not None:
-            self._collect_discovered_outputs(step, cwd, ctx, state)
+            self._collect_discovered_outputs(step, step.discovered_outputs, cwd, ctx, state)
 
     def _collect_discovered_outputs(
-        self, step: RunStep, cwd: Path, ctx: TransformContext, state: StageState
+        self,
+        step: RunStep,
+        discovered_outputs: str,
+        cwd: Path,
+        ctx: TransformContext,
+        state: StageState,
     ) -> None:
-        manifest_path = cwd / step.discovered_outputs
+        manifest_path = cwd / discovered_outputs
         if not manifest_path.exists():
             raise GorgetConfigError(f"discovered-outputs manifest not found: {manifest_path}")
 
