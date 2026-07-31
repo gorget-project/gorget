@@ -128,7 +128,7 @@ class PackStep:
 @dataclass(frozen=True, kw_only=True)
 class VendorBumpEntry:
     dependency: str
-    minimum_version: str
+    version: str    # "0.39.0" = minimum (>=), "~4.18" = prefix pin
 
 
 @dataclass(frozen=True, kw_only=True)
