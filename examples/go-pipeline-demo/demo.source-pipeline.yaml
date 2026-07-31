@@ -22,12 +22,6 @@ transform:
   - type: vendor
     ecosystem: go
 
-  - type: build-ui
-    ecosystem: npm
-    script: build
-    path: ui
-    output-dir: dist
-
   # Escape hatch: an arbitrary command, with declared outputs archived as new
   # artifacts afterward.
   - type: run
