@@ -107,6 +107,21 @@ def extract_tar_gz(archive_path: Path, dest_dir: Path) -> None:
         tar.extractall(dest_dir, filter="data")
 
 
+def _reference_mtime(src_dir: Path) -> int:
+    """The newest mtime among `src_dir`'s actual files.
+
+    Directory mtimes aren't trustworthy here: removing an entry from a
+    directory (e.g. `strip-tarball` deleting a matched path) bumps that
+    directory's own mtime to wall-clock "now", which would otherwise leak
+    into the repacked archive and make it non-deterministic across runs.
+    Regular files are untouched by that and keep the mtime `extract_tar_gz`
+    restored from the original archive, so deriving the reference from them
+    instead keeps repacking reproducible.
+    """
+    mtimes = [p.stat().st_mtime for p in src_dir.rglob("*") if p.is_file()]
+    return int(max(mtimes)) if mtimes else 0
+
+
 def repack_tar_gz(src_dir: Path, dest: Path) -> None:
     """Tar up `src_dir`'s contents at their own top-level paths (no injected
     `arcname` wrapper like `make_tar_gz`) -- used to repack a tarball after
@@ -115,14 +130,18 @@ def repack_tar_gz(src_dir: Path, dest: Path) -> None:
     The archive's compression is derived from `dest`'s extension (`.tar.gz`/
     `.tgz` for gzip, `.tar.bz2`/`.tbz2` for bzip2) so the bytes on disk always
     match what the filename claims.
+
+    Every member is stamped with `_reference_mtime(src_dir)` so repacking the
+    same stripped content twice always produces byte-identical output.
     """
     kind = compression_kind(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    filter_fn = _normalize_mtime(_reference_mtime(src_dir))
     if kind == "gz":
         with open_gzip_tar(dest) as tar:
             for entry in sorted(src_dir.iterdir()):
-                tar.add(entry, arcname=entry.name)
+                tar.add(entry, arcname=entry.name, filter=filter_fn)
     else:
         with tarfile.open(dest, "w:bz2") as tar:
             for entry in sorted(src_dir.iterdir()):
-                tar.add(entry, arcname=entry.name)
+                tar.add(entry, arcname=entry.name, filter=filter_fn)
