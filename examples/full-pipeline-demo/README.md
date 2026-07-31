@@ -3,7 +3,7 @@
 Runnable, non-pytest example exercising every stage of gorget's pipeline
 together, kept up to date as new primitives are added -- if you add a new
 step type or check, add it here too. It's a superset of
-`../go-pipeline-demo` (all six Transform step types) with a Verify check
+`../go-pipeline-demo` (all five Transform step types) with a Verify check
 and a Policy check layered on top.
 
 | Stage | Step | What it does here |
@@ -13,7 +13,6 @@ and a Policy check layered on top.
 | Transform | `strip-tarball` | Removes `docs/` from the Go source tarball |
 | Transform | `vendor-pin` | Bumps `rsc.io/quote` from `v1.0.0` to `v1.5.2` |
 | Transform | `vendor` | Vendors the now-bumped dependency |
-| Transform | `build-ui` | Runs `npm run build` in `ui/`, archives `dist/` |
 | Transform | `run` | Escape hatch: runs `go version`, archives the output file |
 | Transform | `pack` | Packs `setup-demo-repo.sh` (already in `--package-dir`) into a deterministic archive |
 | Verify | `gpg-signature` | Verifies GNU Hello's tarball against its real upstream maintainer key |
@@ -27,8 +26,8 @@ adding coverage): `spec-update`/`spec-source` fetch steps (see
 no example yet), `audit:`/`license-compliance:` policy checks (see
 `../policy-demo`).
 
-Requires `git`, `go`, `npm`, and `gpg` on `PATH`, plus network access
-(`proxy.golang.org`, `registry.npmjs.org`, `ftp.gnu.org`).
+Requires `git`, `go`, and `gpg` on `PATH`, plus network access
+(`proxy.golang.org`, `ftp.gnu.org`).
 
 ## 1. Set up the demo repo (once)
 
@@ -37,8 +36,7 @@ Requires `git`, `go`, `npm`, and `gpg` on `PATH`, plus network access
 ```
 
 Creates `demo-repo/`: a tiny real Go module pinned to an old
-`rsc.io/quote v1.0.0`, a `docs/` dir to be stripped, and a minimal `ui/` npm
-project for `build-ui`.
+`rsc.io/quote v1.0.0` and a `docs/` dir to be stripped.
 
 ## 2. Run gorget
 
@@ -63,9 +61,6 @@ tar tzf /tmp/gorget-full-output/demo-main.tar.gz | grep docs   # <- prints nothi
 
 # vendor-pin + vendor: rsc.io/quote bumped and actually vendored
 tar tzf /tmp/gorget-full-output/demo-vendor.tar.gz | grep quote
-
-# build-ui: the built dist/ output, archived
-tar tzf /tmp/gorget-full-output/demo-ui-assets.tar.gz
 
 # run: the escape-hatch command's declared output, archived verbatim
 cat /tmp/gorget-full-output/go-version.txt
