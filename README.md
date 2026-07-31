@@ -139,11 +139,10 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 | `strip-tarball` | Remove paths (glob patterns) from a fetched tarball and repack it |
 | `vendor-bump` | Bump a vendored dependency (direct **or** nested transitive) to a minimum or series-capped version (Go/npm/pnpm/yarn/Cargo/Maven), before a later `vendor` step re-vendors. Transitive deps are forced via the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm.overrides`, yarn `resolutions`, cargo `--precise`). Plain `version: "0.39.0"` means `>=0.39.0` (no upper bound); tilde `version: "~4.18.2"` means `>=4.18.2` capped to the `4.18.x` series |
 | `vendor` | Same step as `fetch:`'s `vendor` (reused) -- lets `vendor-bump` run before vendoring, since `fetch:` always runs before `transform:` |
-| `build-ui` | Run `npm`/`yarn run <script>` and archive the build output directory |
 | `run` | Escape hatch: an arbitrary command, with declared output paths archived as new artifacts afterward |
 | `pack` | Archive an explicit list of files already in `--package-dir` into a single deterministic tarball, each at its own relative path |
 
-`vendor-bump`/`vendor`/`build-ui`/`run` all operate against a shared working
+`vendor-bump`/`vendor`/`run` all operate against a shared working
 source tree: a `git` fetch step's checkout if one ran, otherwise the sole
 fetched artifact gets extracted on first use (an error if there's more than
 one and no way to tell which to use) -- unless a `run:` step declares
@@ -377,7 +376,7 @@ toolchain:
 ```
 
 Declares per-package tool version requirements for `vendor`/`vendor-bump`/
-`build-ui`/`run` steps. Before any stage runs (even under `--dry-run`),
+`run` steps. Before any stage runs (even under `--dry-run`),
 gorget activates an installed RPM-native version when the distribution exposes
 one through a distinctly named executable, then validates it. Node.js uses
 `node-<major>` (and matching `npm-<major>`/`npx-<major>` when installed); Python

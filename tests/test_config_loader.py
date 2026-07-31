@@ -4,7 +4,6 @@ import pytest
 
 from gorget.config.loader import build_pipeline_spec, load_yaml, parse_pipeline_spec
 from gorget.config.schema import (
-    BuildUiStep,
     BundledProvidesStep,
     ChecksumFileStep,
     GitStep,
@@ -168,17 +167,6 @@ def test_transform_vendor_can_sync_go_modules_to_source():
     step = spec.transform.steps[0]
     assert isinstance(step, VendorStep)
     assert step.sync_go_modules is True
-
-
-def test_transform_build_ui_step_parses():
-    spec = build_pipeline_spec(
-        FIXTURES / "transform-build-ui.yaml", substitution_vars=make_vars()
-    )
-    step = spec.transform.steps[0]
-    assert isinstance(step, BuildUiStep)
-    assert step.ecosystem == "npm"
-    assert step.path == "ui"
-    assert step.output_dir == "dist"
 
 
 def test_transform_run_step_parses():

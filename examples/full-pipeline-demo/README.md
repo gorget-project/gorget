@@ -3,7 +3,7 @@
 Runnable, non-pytest example exercising every stage of gorget's pipeline
 together, kept up to date as new primitives are added -- if you add a new
 step type or check, add it here too. It's a superset of
-`../go-pipeline-demo` (all six Transform step types) with a Verify check
+`../go-pipeline-demo` (all five Transform step types) with a Verify check
 and a Policy check layered on top.
 
 | Stage | Step | What it does here |
@@ -13,7 +13,6 @@ and a Policy check layered on top.
 | Transform | `strip-tarball` | Removes `docs/` from the Go source tarball |
 | Transform | `vendor-bump` | Bumps `rsc.io/quote` from `v1.0.0` to `v1.5.2` |
 | Transform | `vendor` | Vendors the now-bumped dependency |
-| Transform | `build-ui` | Runs `npm run build` in `ui/`, archives `dist/` |
 | Transform | `run` | Runs Go plus direct and `/usr/bin/env` Node version checks |
 | Transform | `pack` | Packs `setup-demo-repo.sh` (already in `--package-dir`) into a deterministic archive |
 | Verify | `gpg-signature` | Verifies GNU Hello's tarball against its real upstream maintainer key |
@@ -39,8 +38,7 @@ default Node.js version.
 ```
 
 Creates `demo-repo/`: a tiny real Go module pinned to an old
-`rsc.io/quote v1.0.0`, a `docs/` dir to be stripped, and a minimal `ui/` npm
-project for `build-ui`.
+`rsc.io/quote v1.0.0` and a `docs/` dir to be stripped.
 
 ## 2. Run gorget
 
@@ -65,9 +63,6 @@ tar tzf /tmp/gorget-full-output/demo-main.tar.gz | grep docs   # <- prints nothi
 
 # vendor-bump + vendor: rsc.io/quote bumped and actually vendored
 tar tzf /tmp/gorget-full-output/demo-vendor.tar.gz | grep quote
-
-# build-ui: the built dist/ output, archived
-tar tzf /tmp/gorget-full-output/demo-ui-assets.tar.gz
 
 # run: the escape-hatch command's declared outputs, archived verbatim
 cat /tmp/gorget-full-output/go-version.txt
@@ -128,7 +123,7 @@ toolchain:
 Jaeger's actual Node.js requirement. Gorget finds the trusted,
 parallel-installed `node-24` RPM command and creates
 temporary `node`, `npm`, and `npx` aliases for the complete pipeline. The
-`build-ui` step therefore runs with Node.js 24. The `run` step records both a
+`run` step therefore runs with Node.js 24 and records both a
 direct `node --version` and `/usr/bin/env node --version`; both output files
 show the same Node.js 24 release, demonstrating that child scripts inherit the
 selection.
