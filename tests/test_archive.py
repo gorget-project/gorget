@@ -128,6 +128,30 @@ def test_repack_tar_gz_preserves_top_level_layout(tmp_path):
     assert "pkg-1.0.0/sub/b.txt" in names
 
 
+def test_repack_tar_gz_is_deterministic_after_removing_a_path(tmp_path):
+    """Regression test: removing a path bumps its parent directory's own
+    mtime to wall-clock "now" (standard filesystem behavior), independent of
+    any file content -- repack_tar_gz must not let that leak into the
+    archive, or repacking the same stripped content twice (e.g. two runs of
+    `strip-tarball`) would produce different bytes each time.
+    """
+
+    def build(dest_name):
+        extracted = tmp_path / f"extracted-{dest_name}"
+        (extracted / "pkg-1.0.0" / "deps").mkdir(parents=True)
+        (extracted / "pkg-1.0.0" / "keep.txt").write_text("keep")
+        (extracted / "pkg-1.0.0" / "deps" / "bundled.tar").write_text("strip me")
+        os.utime(extracted / "pkg-1.0.0" / "keep.txt", (1000, 1000))
+        shutil.rmtree(extracted / "pkg-1.0.0" / "deps")
+        dest = tmp_path / f"{dest_name}.tar.gz"
+        repack_tar_gz(extracted, dest)
+        return dest.read_bytes()
+
+    first = build("first")
+    second = build("second")
+    assert first == second
+
+
 def test_repack_tar_gz_after_removing_a_path(tmp_path):
     extracted = tmp_path / "extracted"
     (extracted / "pkg-1.0.0" / "deps").mkdir(parents=True)
