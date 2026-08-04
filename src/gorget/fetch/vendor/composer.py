@@ -17,7 +17,16 @@ class ComposerVendor:
         package_dir: Path | None = None,
         use_workspace: bool = True,
     ) -> Path:
-        cmd = ["composer", "install", "--no-dev", "--no-scripts", "--no-interaction"]
+        # --optimize-autoloader dumps a flattened classmap covering the root
+        # package's own PSR-4 classes as well as vendored ones (composer's
+        # own documented recommendation for production/packaged installs).
+        # Without it, autoload_classmap.php/autoload_static.php only cover
+        # classmap-declared and vendor autoload rules, silently diverging
+        # from what a real install would produce.
+        cmd = [
+            "composer", "install", "--no-dev", "--no-scripts", "--no-interaction",
+            "--optimize-autoloader",
+        ]
         result = run(wrap_command(cmd, toolchain), cwd=module_dir)
         if result.returncode != 0:
             raise GorgetTransientError(

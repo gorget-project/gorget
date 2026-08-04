@@ -15,6 +15,7 @@ def test_composer_vendor_runs_install_no_dev(tmp_path, mocker):
     args = mock_run.call_args.args[0]
     assert args[:2] == ["composer", "install"]
     assert "--no-dev" in args
+    assert "--optimize-autoloader" in args
     assert result == tmp_path / "vendor"
 
 
