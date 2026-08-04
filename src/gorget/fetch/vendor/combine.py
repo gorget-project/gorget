@@ -72,6 +72,9 @@ def combine_vendor_archives(
     if kind == "gz":
         with open_gzip_tar(archive_path) as tar:
             _add_all(tar)
+    elif kind == "bz2":
+        with tarfile.open(archive_path, "w:bz2") as tar:
+            _add_all(tar)
     else:
-        with tarfile.open(archive_path, f"w:{kind}") as tar:
+        with tarfile.open(archive_path, "w:xz") as tar:
             _add_all(tar)

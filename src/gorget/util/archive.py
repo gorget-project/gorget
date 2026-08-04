@@ -100,8 +100,11 @@ def make_tar_gz(src_dir: Path, dest: Path, arcname: str, *, mtime: int | None = 
     if kind == "gz":
         with open_gzip_tar(dest) as tar:
             tar.add(src_dir, arcname=arcname, filter=filter_fn)
+    elif kind == "bz2":
+        with tarfile.open(dest, "w:bz2") as tar:
+            tar.add(src_dir, arcname=arcname, filter=filter_fn)
     else:
-        with tarfile.open(dest, f"w:{kind}") as tar:
+        with tarfile.open(dest, "w:xz") as tar:
             tar.add(src_dir, arcname=arcname, filter=filter_fn)
 
 
@@ -145,7 +148,11 @@ def repack_tar_gz(src_dir: Path, dest: Path) -> None:
         with open_gzip_tar(dest) as tar:
             for entry in sorted(src_dir.iterdir()):
                 tar.add(entry, arcname=entry.name, filter=filter_fn)
+    elif kind == "bz2":
+        with tarfile.open(dest, "w:bz2") as tar:
+            for entry in sorted(src_dir.iterdir()):
+                tar.add(entry, arcname=entry.name, filter=filter_fn)
     else:
-        with tarfile.open(dest, f"w:{kind}") as tar:
+        with tarfile.open(dest, "w:xz") as tar:
             for entry in sorted(src_dir.iterdir()):
                 tar.add(entry, arcname=entry.name, filter=filter_fn)
