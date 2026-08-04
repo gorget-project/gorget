@@ -38,8 +38,8 @@ def combine_vendor_archives(
     """Combine per-module vendor directories into a single archive.
 
     The archive's compression is derived from `archive_path`'s extension
-    (`.tar.gz`/`.tgz` for gzip, `.tar.bz2`/`.tbz2` for bzip2) so the bytes on
-    disk always match what the filename claims.
+    (`.tar.gz`/`.tgz` for gzip, `.tar.bz2`/`.tbz2` for bzip2, `.tar.xz`/`.txz`
+    for xz) so the bytes on disk always match what the filename claims.
 
     `mtime`, when given, is stamped onto every archive member -- e.g. the
     source checkout's commit timestamp -- in place of the vendor tool's live
@@ -73,5 +73,5 @@ def combine_vendor_archives(
         with open_gzip_tar(archive_path) as tar:
             _add_all(tar)
     else:
-        with tarfile.open(archive_path, "w:bz2") as tar:
+        with tarfile.open(archive_path, f"w:{kind}") as tar:
             _add_all(tar)

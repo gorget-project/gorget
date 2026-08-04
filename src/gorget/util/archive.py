@@ -19,32 +19,36 @@ _GZIP_MTIME = 0
 
 GZIP_SUFFIXES = (".tar.gz", ".tgz")
 BZ2_SUFFIXES = (".tar.bz2", ".tbz2")
+XZ_SUFFIXES = (".tar.xz", ".txz")
 
 
 def strip_archive_suffix(filename: str) -> str:
-    """Strip a known tar/compression suffix (`.tar.gz`, `.tar.bz2`, etc.) from
-    `filename`, leaving the bare name -- e.g. `helm-4.2.3` from
+    """Strip a known tar/compression suffix (`.tar.gz`, `.tar.bz2`, `.tar.xz`,
+    etc.) from `filename`, leaving the bare name -- e.g. `helm-4.2.3` from
     `helm-4.2.3.tar.gz`. Used to derive an archive's internal top-level
     directory from its own output filename, so the two always agree.
     """
-    for suffix in (*GZIP_SUFFIXES, *BZ2_SUFFIXES):
+    for suffix in (*GZIP_SUFFIXES, *BZ2_SUFFIXES, *XZ_SUFFIXES):
         if filename.endswith(suffix):
             return filename[: -len(suffix)]
     return filename
 
 
 def compression_kind(path: Path) -> str:
-    """Derive the compression scheme ("gz" or "bz2") from `path`'s extension,
-    so an archive's actual bytes always match what its filename claims.
+    """Derive the compression scheme ("gz", "bz2", or "xz") from `path`'s
+    extension, so an archive's actual bytes always match what its filename
+    claims.
     """
     name = path.name
     if name.endswith(GZIP_SUFFIXES):
         return "gz"
     if name.endswith(BZ2_SUFFIXES):
         return "bz2"
+    if name.endswith(XZ_SUFFIXES):
+        return "xz"
     raise GorgetConfigError(
         f"Unrecognized archive extension for {path}: expected one of "
-        f"{', '.join(GZIP_SUFFIXES + BZ2_SUFFIXES)}"
+        f"{', '.join(GZIP_SUFFIXES + BZ2_SUFFIXES + XZ_SUFFIXES)}"
     )
 
 
@@ -83,8 +87,8 @@ def make_tar_gz(src_dir: Path, dest: Path, arcname: str, *, mtime: int | None = 
     """Tar up `src_dir` (excluding `.git`) as `arcname`.
 
     The archive's compression is derived from `dest`'s extension (`.tar.gz`/
-    `.tgz` for gzip, `.tar.bz2`/`.tbz2` for bzip2) so the bytes on disk always
-    match what the filename claims.
+    `.tgz` for gzip, `.tar.bz2`/`.tbz2` for bzip2, `.tar.xz`/`.txz` for xz) so
+    the bytes on disk always match what the filename claims.
 
     `mtime`, when given, is stamped onto every archive member in place of the
     checkout's live filesystem mtimes -- e.g. the commit's own timestamp -- so
@@ -97,7 +101,7 @@ def make_tar_gz(src_dir: Path, dest: Path, arcname: str, *, mtime: int | None = 
         with open_gzip_tar(dest) as tar:
             tar.add(src_dir, arcname=arcname, filter=filter_fn)
     else:
-        with tarfile.open(dest, "w:bz2") as tar:
+        with tarfile.open(dest, f"w:{kind}") as tar:
             tar.add(src_dir, arcname=arcname, filter=filter_fn)
 
 
@@ -128,8 +132,8 @@ def repack_tar_gz(src_dir: Path, dest: Path) -> None:
     stripping paths from it, preserving whatever internal layout it already had.
 
     The archive's compression is derived from `dest`'s extension (`.tar.gz`/
-    `.tgz` for gzip, `.tar.bz2`/`.tbz2` for bzip2) so the bytes on disk always
-    match what the filename claims.
+    `.tgz` for gzip, `.tar.bz2`/`.tbz2` for bzip2, `.tar.xz`/`.txz` for xz) so
+    the bytes on disk always match what the filename claims.
 
     Every member is stamped with `_reference_mtime(src_dir)` so repacking the
     same stripped content twice always produces byte-identical output.
@@ -142,6 +146,6 @@ def repack_tar_gz(src_dir: Path, dest: Path) -> None:
             for entry in sorted(src_dir.iterdir()):
                 tar.add(entry, arcname=entry.name, filter=filter_fn)
     else:
-        with tarfile.open(dest, "w:bz2") as tar:
+        with tarfile.open(dest, f"w:{kind}") as tar:
             for entry in sorted(src_dir.iterdir()):
                 tar.add(entry, arcname=entry.name, filter=filter_fn)

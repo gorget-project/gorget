@@ -2,7 +2,7 @@ import os
 import shutil
 import tarfile
 
-from gorget.util.archive import extract_tar_gz, make_tar_gz, repack_tar_gz
+from gorget.util.archive import compression_kind, extract_tar_gz, make_tar_gz, repack_tar_gz
 
 
 def test_make_tar_gz_includes_files_under_arcname(tmp_path):
@@ -167,3 +167,36 @@ def test_repack_tar_gz_after_removing_a_path(tmp_path):
         names = tar.getnames()
     assert "pkg-1.0.0/keep.txt" in names
     assert not any("deps" in name for name in names)
+
+
+def test_compression_kind_recognizes_xz_suffixes(tmp_path):
+    assert compression_kind(tmp_path / "archive.tar.xz") == "xz"
+    assert compression_kind(tmp_path / "archive.txz") == "xz"
+
+
+def test_make_tar_gz_writes_real_xz_content(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("hello")
+
+    dest = tmp_path / "archive.tar.xz"
+    make_tar_gz(src, dest, arcname="pkg-1.0.0")
+
+    with tarfile.open(dest) as tar:
+        assert tar.getnames() == ["pkg-1.0.0", "pkg-1.0.0/a.txt"]
+
+
+def test_make_tar_xz_is_byte_identical_across_runs_with_different_source_mtimes(tmp_path):
+    def build(offset, dest_name):
+        src = tmp_path / f"src-{offset}"
+        src.mkdir()
+        (src / "a.txt").write_text("hello")
+        os.utime(src / "a.txt", (1000 + offset, 1000 + offset))
+        os.utime(src, (1000 + offset, 1000 + offset))
+        dest = tmp_path / dest_name
+        make_tar_gz(src, dest, arcname="pkg", mtime=999)
+        return dest.read_bytes()
+
+    first = build(0, "first.tar.xz")
+    second = build(3600, "second.tar.xz")
+    assert first == second
