@@ -216,3 +216,47 @@ class TestGoVendorToolsConfig:
         )
         with pytest.raises(GorgetTransientError, match="no such file"):
             GoVendor().vendor(tmp_path, package_dir=package_dir)
+
+
+class TestArchiveRootFiles:
+    """Regression coverage for a real gap found migrating grafana13.1: a
+    vendor archive containing only "vendor/" gets mis-extracted by
+    `go_vendor_license --use-archive` (it has a single common top-level
+    directory, so the tool treats it as an independently-wrapped sibling
+    archive instead of nesting it inside the source tree) -- which made
+    every one of go-vendor-tools.toml's correctly-pinned license file
+    checksums come up as unexpectedly "changed" in %check, even though the
+    vendor content itself was byte-identical to what the pinned hashes
+    expected. See GoVendor.archive_root_files's docstring for the full
+    mechanism.
+    """
+
+    def test_returns_go_mod_and_go_sum_for_a_plain_module(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/x")
+        (tmp_path / "go.sum").write_text("checksums")
+        assert set(GoVendor().archive_root_files(tmp_path)) == {
+            tmp_path / "go.mod",
+            tmp_path / "go.sum",
+        }
+
+    def test_omits_go_sum_when_absent(self, tmp_path):
+        # A module with zero external dependencies has no go.sum at all --
+        # existence, not a hardcoded required/optional split, decides
+        # inclusion (matches go-vendor-tools' own OPTIONAL_FILES treatment).
+        (tmp_path / "go.mod").write_text("module example.com/x")
+        assert GoVendor().archive_root_files(tmp_path) == [tmp_path / "go.mod"]
+
+    def test_includes_go_work_files_for_a_workspace(self, tmp_path):
+        (tmp_path / "go.work").write_text("go 1.22\n")
+        (tmp_path / "go.work.sum").write_text("checksums")
+        (tmp_path / "go.mod").write_text("module example.com/x")
+        (tmp_path / "go.sum").write_text("checksums")
+        assert set(GoVendor().archive_root_files(tmp_path)) == {
+            tmp_path / "go.work",
+            tmp_path / "go.work.sum",
+            tmp_path / "go.mod",
+            tmp_path / "go.sum",
+        }
+
+    def test_returns_empty_list_when_nothing_exists(self, tmp_path):
+        assert GoVendor().archive_root_files(tmp_path) == []

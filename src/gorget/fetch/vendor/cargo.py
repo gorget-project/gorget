@@ -25,3 +25,6 @@ class CargoVendor:
                 f"cargo vendor failed in {module_dir}: {result.stderr.strip()}"
             )
         return vendor_dir
+
+    def archive_root_files(self, module_dir: Path) -> list[Path]:
+        return []

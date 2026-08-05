@@ -24,3 +24,6 @@ class NpmVendor:
                 f"npm install failed in {module_dir}: {result.stderr.strip()}"
             )
         return module_dir / "node_modules"
+
+    def archive_root_files(self, module_dir: Path) -> list[Path]:
+        return []

@@ -52,6 +52,17 @@ class VendorHandler:
                 for module in step.modules
             ]
             mtime = commit_timestamp(ctx.source_dir)
-            combine_vendor_archives(module_outputs, archive_path, mtime=mtime)
+            # Only the single-unnamed-module ("bare vendor/") case needs
+            # root_files -- combine_vendor_archives ignores them otherwise
+            # anyway, but there's nothing to gain from an archive_root_files
+            # filesystem check that's guaranteed to be discarded.
+            root_files = (
+                ecosystem.archive_root_files(module_outputs[0][1].parent)
+                if len(module_outputs) == 1 and module_outputs[0][0].name is None
+                else None
+            )
+            combine_vendor_archives(
+                module_outputs, archive_path, mtime=mtime, root_files=root_files
+            )
 
         return [build_artifact(archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run)]
