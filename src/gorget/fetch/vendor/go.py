@@ -97,6 +97,32 @@ class GoVendor:
             self._run(command, module_dir, toolchain, env)
         return module_dir / "vendor"
 
+    def archive_root_files(self, module_dir: Path) -> list[Path]:
+        """go-vendor-tools' own `go_vendor_archive` always packs go.mod/go.sum
+        (or go.work/go.work.sum for a workspace) alongside vendor/ at an
+        archive's top level -- not just cosmetic convention.
+        `go_vendor_license --use-archive`'s merge logic decides whether to
+        nest a second archive inside the first (source) archive or treat it
+        as an independently-wrapped sibling, based on whether the second
+        archive has a single common top-level directory of its own. A vendor
+        archive containing *only* "vendor/" has exactly one, so it gets
+        treated as independently wrapped and lands as a sibling of the
+        extracted source tree instead of nested inside it -- meaning %check's
+        license verification can never find the vendored license files at
+        their expected paths, and reports every one of them as unexpectedly
+        "changed" even though the vendor content itself is untouched (found
+        migrating grafana13.1: go-vendor-tools.toml's pins were byte-for-byte
+        correct, but `--use-archive` still failed every one of them).
+        Including go.mod/go.sum breaks that single-top-level-directory
+        heuristic, forcing the correct nested extraction.
+        """
+        names = (
+            ("go.work", "go.work.sum", "go.mod", "go.sum")
+            if (module_dir / "go.work").is_file()
+            else ("go.mod", "go.sum")
+        )
+        return [f for name in names if (f := module_dir / name).is_file()]
+
     def _run(
         self,
         command: list[str],

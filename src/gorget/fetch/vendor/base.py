@@ -49,3 +49,16 @@ class VendorEcosystem(Protocol):
         compliance/internal/tools from its vendor archive.
         """
         ...
+
+    def archive_root_files(self, module_dir: Path) -> list[Path]:
+        """Return files that must sit alongside `vendor/` at a *bare*
+        single-module archive's top level (see combine.py's `bare_vendor`) --
+        empty for ecosystems with no such requirement.
+
+        Only `go` currently returns anything: go-vendor-tools' own
+        `go_vendor_archive` always packs go.mod/go.sum (or go.work/go.work.sum
+        for a workspace) alongside vendor/, and `go_vendor_license
+        --use-archive` depends on that layout, not just on convention -- see
+        `GoVendor.archive_root_files`.
+        """
+        ...

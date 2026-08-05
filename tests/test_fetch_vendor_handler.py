@@ -31,6 +31,12 @@ def test_vendor_requires_a_preceding_source_dir(tmp_path):
 
 
 def test_vendor_single_module_produces_archive(tmp_path, mocker):
+    """Also a regression test for the single-unnamed-module case wiring
+    ecosystem.archive_root_files() through to the archive root: a vendor
+    archive containing only "vendor/" gets mis-extracted by
+    `go_vendor_license --use-archive` (see GoVendor.archive_root_files), so
+    go.sum here must land next to "vendor/", not inside it.
+    """
     mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
@@ -44,7 +50,13 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
         return vendor_dir
 
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {
+            "go": Mock(
+                vendor=Mock(side_effect=fake_vendor),
+                archive_root_files=Mock(side_effect=lambda module_dir: [module_dir / "go.sum"]),
+            )
+        },
     )
     step = VendorStep(ecosystem="go")
     artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
@@ -53,6 +65,7 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
     with tarfile.open(artifacts[0].path) as tar:
         names = tar.getnames()
     assert any(name.endswith("modules.txt") for name in names)
+    assert "go.sum" in names
 
 
 def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
@@ -100,21 +113,31 @@ def test_vendor_archive_members_use_source_commit_timestamp(tmp_path, mocker):
     source_dir.mkdir()
 
     def fake_vendor(module_dir, toolchain=(), package_dir=None, use_workspace=True):
+        module_dir.mkdir(parents=True, exist_ok=True)
+        (module_dir / "go.mod").write_text("module example.com/x")
         vendor_dir = module_dir / "vendor"
         vendor_dir.mkdir(parents=True, exist_ok=True)
         (vendor_dir / "modules.txt").write_text("example.com/x v1.0.0")
         return vendor_dir
 
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {
+            "go": Mock(
+                vendor=Mock(side_effect=fake_vendor),
+                archive_root_files=Mock(side_effect=lambda module_dir: [module_dir / "go.mod"]),
+            )
+        },
     )
     step = VendorStep(ecosystem="go")
     artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
 
     mock_commit_timestamp.assert_called_once_with(source_dir)
     with tarfile.open(artifacts[0].path) as tar:
-        mtimes = {member.mtime for member in tar.getmembers()}
+        members = tar.getmembers()
+        mtimes = {member.mtime for member in members}
     assert mtimes == {1700000000}
+    assert any(m.name == "go.mod" for m in members)
 
 
 def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
@@ -130,7 +153,12 @@ def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
         return vendor_dir
 
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {
+            "go": Mock(
+                vendor=Mock(side_effect=fake_vendor), archive_root_files=Mock(return_value=[])
+            )
+        },
     )
     step = VendorStep(ecosystem="go", archive_name="etcd-vendor.tar.bz2")
     artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
@@ -163,7 +191,10 @@ def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
         return vendor_dir
 
     mock_vendor = Mock(side_effect=fake_vendor)
-    mocker.patch("gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {"go": Mock(vendor=mock_vendor, archive_root_files=Mock(return_value=[]))},
+    )
     step = VendorStep(ecosystem="go")
     toolchain = [ToolchainEntry(name="go", version="1.22.0")]
     VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir, toolchain=toolchain))
@@ -187,7 +218,10 @@ def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
         return vendor_dir
 
     mock_vendor = Mock(side_effect=fake_vendor)
-    mocker.patch("gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {"go": Mock(vendor=mock_vendor, archive_root_files=Mock(return_value=[]))},
+    )
     step = VendorStep(ecosystem="go", modules=[VendorModule(path=".", use_workspace=False)])
     VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
     mock_vendor.assert_called_once_with(source_dir / ".", [], tmp_path, False)
