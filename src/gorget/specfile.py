@@ -14,6 +14,7 @@ from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.util.subprocess_run import run
 
 _SOURCE_RE = re.compile(r"^Source(\d*)\s*:\s*(\S+)\s*$", re.MULTILINE)
+_PATCH_RE = re.compile(r"^Patch(\d*)\s*:\s*(\S+)\s*$", re.MULTILINE)
 _VERSION_RE = re.compile(r"^(Version:\s*)\S+", re.MULTILINE)
 _RELEASE_RE = re.compile(r"^(Release:\s*)(\S+?)(%\{[^}]*\}.*)?$", re.MULTILINE)
 
@@ -23,6 +24,12 @@ class SpecSourceEntry:
     index: int
     url: str
     raw: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class SpecPatchEntry:
+    index: int
+    filename: str
 
 
 class SpecFile:
@@ -98,6 +105,24 @@ class SpecFile:
         return [
             SpecSourceEntry(index=index, url=url, raw=raw_lines.get(index))
             for index, url in sorted(entries.items())
+        ]
+
+    def patches(self) -> list[SpecPatchEntry]:
+        """Return declared PatchN: entries in index order.
+
+        Unlike sources(), this reads the raw spec text rather than macro-expanded
+        output: a patch filename is a plain literal in every spec seen so far, and
+        the raw text also preserves patches inside %if blocks that rpmspec -P
+        would otherwise resolve away for the current build target -- callers here
+        care about what's *declared*, not what applies to any one arch/condition.
+        """
+        entries: dict[int, str] = {}
+        for match in _PATCH_RE.finditer(self.path.read_text()):
+            index = int(match.group(1)) if match.group(1) else 0
+            entries.setdefault(index, match.group(2))
+        return [
+            SpecPatchEntry(index=index, filename=filename)
+            for index, filename in sorted(entries.items())
         ]
 
     def set_version(self, version: str) -> None:

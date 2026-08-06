@@ -91,7 +91,14 @@ def demo_go_repo(tmp_path: Path) -> Path:
 
 def make_ctx(package_dir: Path, output_dir: Path, pipeline_yaml: str):
     package_dir.mkdir(parents=True, exist_ok=True)
-    (package_dir / "demo.spec").write_text("Name: demo\nVersion: 1.0.0\nRelease: 1\n")
+    (package_dir / "demo.spec").write_text(
+        "Name: demo\nVersion: 1.0.0\nRelease: 1\nPatch0: 0001-bump-quote.patch\n"
+    )
+    # vendor-pin mutates go.mod in the checkout -- gomod_patch_sync.py requires a
+    # spec patch replicating that onto the real build tree, or it fails closed.
+    (package_dir / "0001-bump-quote.patch").write_text(
+        "--- a/go.mod\n+++ b/go.mod\n@@ -1 +1 @@\n-old\n+new\n"
+    )
     pipeline_file = package_dir.parent / "pipeline.yaml"
     pipeline_file.write_text(pipeline_yaml)
     args = argparse.Namespace(

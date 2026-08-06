@@ -1,0 +1,9 @@
+--- a/go.mod
++++ b/go.mod
+@@ -1,5 +1,5 @@
+ module example.com/demo
+
+ go 1.22
+
+-require rsc.io/quote v1.0.0
++require rsc.io/quote v1.5.2

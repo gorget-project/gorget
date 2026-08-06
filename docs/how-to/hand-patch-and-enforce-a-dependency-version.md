@@ -42,6 +42,22 @@ the only ordering that lets the pin's edit land before vendoring reads it.
 See [`go-pipeline-demo`](../../examples/go-pipeline-demo/) for this running
 against a real `go.mod`.
 
+**For the `go` ecosystem, you also need a spec patch.** `fetch: {git}`
+archives `Source0` from the checkout *before* `vendor-pin` edits `go.mod` in
+that same checkout -- the edit only ever reaches the vendor archive, never
+the plain source tarball. Without a spec patch replicating the same
+`go.mod`/`go.sum` change onto the actual build tree, the build tree and the
+vendor archive end up requiring different versions of the same dependency,
+which `go build -mod=vendor` rejects as inconsistent vendoring. gorget
+checks for this and fails closed (`GorgetConfigError`) before `vendor-pin`
+mutates anything if no declared spec patch touches `go.mod`/`go.sum` --
+compute that patch offline the same way you would for a CVE backport
+(`go mod edit`/`go mod tidy` against a pristine clone), since Konflux builds
+are hermetic and `%prep` can't re-run those commands itself. This is exactly
+what broke `trivy` for real, via the equivalent `go-vendor-tools.toml`
+`pre_commands` mechanism -- see `gorget/fetch/vendor/gomod_patch_sync.py`'s
+module docstring for the full mechanism, which is identical for both.
+
 ## 2. Enforce it forever
 
 ```yaml
