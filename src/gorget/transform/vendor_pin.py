@@ -13,6 +13,7 @@ from typing import Protocol
 
 from gorget.config.schema import ToolchainEntry, VendorPinEntry, VendorPinStep
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
+from gorget.fetch.vendor.gomod_patch_sync import raise_unless_spec_patches_gomod
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
 from gorget.transform.base import TransformContext, ensure_source_dir
@@ -107,6 +108,19 @@ class VendorPinHandler:
     def run(self, step: VendorPinStep, ctx: TransformContext, state: StageState) -> None:
         if ctx.dry_run:
             return
+        if step.ecosystem == "go" and step.pins:
+            # `go mod edit`/`go mod tidy` mutate go.mod/go.sum in the same
+            # checkout `fetch: {git}` already archived Source0 from -- the
+            # exact same failure mode as go-vendor-tools.toml's pre_commands
+            # (see gomod_patch_sync.py's module docstring). Validate before
+            # mutating anything, so a missing patch fails fast.
+            raise_unless_spec_patches_gomod(
+                ctx.package_dir,
+                reason=(
+                    "A 'vendor-pin' step bumps a Go dependency's minimum version via "
+                    "`go mod edit`/`go mod tidy`"
+                ),
+            )
         source_dir = ensure_source_dir(ctx, state)
         strategy = _STRATEGIES[step.ecosystem]
         for module in step.modules:

@@ -16,6 +16,16 @@ repo:
 Requires `git`, `go`, and `npm` on `PATH`, plus network access to
 `proxy.golang.org`.
 
+`demo.spec` declares `Patch0: 0001-bump-quote-gomod.patch`, a placeholder
+patch that bumps `rsc.io/quote` in `go.mod` to match what `vendor-pin` does
+below. `vendor-pin` mutates `go.mod` in the same checkout `fetch: {git}`
+already archived `Source0` from, so without an equivalent spec patch the
+vendor archive and the real build tree would require different versions of
+the same dependency -- `go build -mod=vendor` rejects that as inconsistent
+vendoring. gorget fails closed on this before vendoring runs (see
+[Hand-patch a vendored dependency, and stop it from regressing](../../docs/how-to/hand-patch-and-enforce-a-dependency-version.md)
+and `gorget/fetch/vendor/gomod_patch_sync.py`); remove `Patch0` to see it.
+
 ## 1. Set up the demo repo (once)
 
 ```bash

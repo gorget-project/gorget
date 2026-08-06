@@ -51,6 +51,43 @@ def test_sources_duplicate_index_raises_config_error(mocker):
         spec.sources()
 
 
+def test_patches_reads_raw_text_without_invoking_rpmspec(tmp_path, mocker):
+    spec_path = tmp_path / "foo.spec"
+    spec_path.write_text("Patch0: 0001-fix.patch\nPatch2: 0002-other.patch\n")
+    mock_run = mocker.patch("gorget.specfile.run")
+    patches = SpecFile(spec_path).patches()
+    assert [(p.index, p.filename) for p in patches] == [
+        (0, "0001-fix.patch"),
+        (2, "0002-other.patch"),
+    ]
+    mock_run.assert_not_called()
+
+
+def test_patches_preserves_entries_inside_if_blocks(tmp_path):
+    # rpmspec -P would resolve away the %if branch that doesn't match the
+    # current build target; patches() reads raw text specifically so callers
+    # see every *declared* patch, not just the ones active for one arch/condition.
+    spec_path = tmp_path / "foo.spec"
+    spec_path.write_text(
+        "Patch0: 0001-always.patch\n%if 0%{?fedora}\nPatch1: 0002-fedora-only.patch\n%endif\n"
+    )
+    patches = SpecFile(spec_path).patches()
+    assert [p.filename for p in patches] == ["0001-always.patch", "0002-fedora-only.patch"]
+
+
+def test_patches_empty_when_no_patch_tags(tmp_path):
+    spec_path = tmp_path / "foo.spec"
+    spec_path.write_text("Name: foo\n")
+    assert SpecFile(spec_path).patches() == []
+
+
+def test_patches_handles_bare_patch_tag_as_index_zero(tmp_path):
+    spec_path = tmp_path / "foo.spec"
+    spec_path.write_text("Patch: 0001-first.patch\n")
+    patches = SpecFile(spec_path).patches()
+    assert [(p.index, p.filename) for p in patches] == [(0, "0001-first.patch")]
+
+
 def test_name_version_release_strip_whitespace(mocker):
     mocker.patch("gorget.specfile.run", return_value=fake_completed(stdout="simple\n"))
     spec = SpecFile(FIXTURES / "specs" / "simple.spec")

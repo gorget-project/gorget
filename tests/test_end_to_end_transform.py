@@ -31,7 +31,14 @@ transform:
 
 
 def make_ctx(tmp_path, pipeline_yaml, dry_run=False):
-    (tmp_path / "foo.spec").write_text("Name: foo\nVersion: 1.2.3\nRelease: 1\n")
+    (tmp_path / "foo.spec").write_text(
+        "Name: foo\nVersion: 1.2.3\nRelease: 1\nPatch0: 0001-bump-x-net.patch\n"
+    )
+    # vendor-pin mutates go.mod in the checkout -- gomod_patch_sync.py requires a
+    # spec patch replicating that onto the real build tree, or it fails closed.
+    (tmp_path / "0001-bump-x-net.patch").write_text(
+        "--- a/go.mod\n+++ b/go.mod\n@@ -1 +1 @@\n-old\n+new\n"
+    )
     pipeline_file = tmp_path / "pipeline.yaml"
     pipeline_file.write_text(pipeline_yaml)
 

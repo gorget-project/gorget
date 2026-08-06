@@ -196,3 +196,81 @@ def test_handler_dry_run_does_nothing(tmp_path, mocker):
     )
     VendorPinHandler().run(step, ctx, state)
     mock_run.assert_not_called()
+
+
+# --- gomod_patch_sync guard ---
+#
+# vendor-pin's `go mod edit`/`go mod tidy` mutate go.mod in the same checkout
+# fetch: {git} already archived Source0 from -- the same failure mode as
+# go-vendor-tools.toml's pre_commands (see
+# gorget.fetch.vendor.gomod_patch_sync's module docstring, and
+# test_fetch_vendor_go.py's TestGomodPatchSync for the pre_commands side).
+
+
+def _write_spec_with_patch(package_dir, patch_touches_gomod):
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "pkg.spec").write_text("Patch0: 0001-fix.patch\n")
+    target = "go.mod" if patch_touches_gomod else "main.go"
+    (package_dir / "0001-fix.patch").write_text(
+        f"--- a/{target}\n+++ b/{target}\n@@ -1 +1 @@\n-old\n+new\n"
+    )
+
+
+def test_go_pin_without_matching_patch_raises(tmp_path, mocker):
+    package_dir = tmp_path / "pkg"
+    _write_spec_with_patch(package_dir, patch_touches_gomod=False)
+    mock_run = mocker.patch("gorget.transform.vendor_pin.run", return_value=_ok())
+
+    ctx = make_ctx(package_dir, source_dir=tmp_path / "src")
+    step = VendorPinStep(
+        ecosystem="go", pins=[VendorPinEntry(dependency="x", minimum_version="1.0.0")]
+    )
+    with pytest.raises(GorgetConfigError, match="vendor-pin"):
+        VendorPinHandler().run(step, ctx, make_state(tmp_path / "work"))
+    mock_run.assert_not_called()
+
+
+def test_go_pin_with_matching_patch_is_allowed(tmp_path, mocker):
+    package_dir = tmp_path / "pkg"
+    _write_spec_with_patch(package_dir, patch_touches_gomod=True)
+    source_dir = tmp_path / "src"
+    (source_dir / "go.mod").parent.mkdir(parents=True, exist_ok=True)
+    (source_dir / "go.mod").write_text("module example\n")
+    mock_run = mocker.patch("gorget.transform.vendor_pin.run", return_value=_ok())
+
+    ctx = make_ctx(package_dir, source_dir=source_dir)
+    step = VendorPinStep(
+        ecosystem="go", pins=[VendorPinEntry(dependency="x", minimum_version="1.0.0")]
+    )
+    VendorPinHandler().run(step, ctx, make_state(tmp_path / "work"))
+    mock_run.assert_called()
+
+
+def test_go_pin_with_no_pins_skips_the_guard(tmp_path, mocker):
+    # An empty pins list can't mutate go.mod, so there's nothing to validate --
+    # this also matches the loop below doing nothing either way.
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    mock_run = mocker.patch("gorget.transform.vendor_pin.run", return_value=_ok())
+
+    ctx = make_ctx(package_dir, source_dir=tmp_path / "src")
+    step = VendorPinStep(ecosystem="go", pins=[])
+    VendorPinHandler().run(step, ctx, make_state(tmp_path / "work"))
+    mock_run.assert_not_called()
+
+
+def test_npm_pin_without_a_spec_patch_is_not_guarded(tmp_path, mocker):
+    # The guard is Go-specific -- npm/cargo have no evidence of the same
+    # extraction-order bug, and package.json/Cargo.toml aren't go.mod/go.sum.
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "package.json").write_text('{"dependencies": {"x": "1.0.0"}}')
+    mocker.patch("gorget.transform.vendor_pin.run", return_value=_ok())
+
+    ctx = make_ctx(package_dir, source_dir=source_dir)
+    step = VendorPinStep(
+        ecosystem="npm", pins=[VendorPinEntry(dependency="x", minimum_version="1.0.0")]
+    )
+    VendorPinHandler().run(step, ctx, make_state(tmp_path / "work"))

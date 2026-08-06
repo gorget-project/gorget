@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shlex
 import tomllib
 from collections.abc import Sequence
@@ -8,10 +9,21 @@ from pathlib import Path
 
 from gorget.config.schema import ToolchainEntry
 from gorget.exceptions import GorgetTransientError
+from gorget.fetch.vendor.gomod_patch_sync import raise_unless_spec_patches_gomod
 from gorget.toolchain import wrap_command
 from gorget.util.subprocess_run import run
 
 _CONFIG_FILENAME = "go-vendor-tools.toml"
+
+# Matches a pre_command that directly names go.mod/go.sum (e.g. a sed/rm
+# targeting the file), or a go subcommand known to rewrite them (`go get`,
+# `go mod tidy`/`edit`). Deliberately doesn't match `go mod vendor`/`go
+# build`, which read go.mod but don't rewrite its requirements. Mirrors
+# rpms/test/test_govendortools_gomod_patch_sync.py's detection -- duplicated
+# here since gorget and that monorepo are separate repos, and this is the
+# fail-closed version that runs for every gorget-migrated package instead of
+# relying on a downstream pytest check to catch drift after the fact.
+_GOMOD_MUTATION_RE = re.compile(r"\bgo\.(?:mod|sum)\b|\bgo\s+get\b|\bgo\s+mod\s+(?:tidy|edit)\b")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -47,6 +59,37 @@ def _load_archive_config(package_dir: Path | None) -> _ArchiveConfig:
     )
 
 
+def _pre_commands_mutate_gomod(pre_commands: list[list[str]]) -> bool:
+    return any(_GOMOD_MUTATION_RE.search(" ".join(command)) for command in pre_commands)
+
+
+def _validate_gomod_patch_sync(package_dir: Path, config: _ArchiveConfig) -> None:
+    """gorget's `fetch: {git}` step archives Source0 from the checkout
+    *before* handing that same checkout to `vendor:` -- so pre_commands (and
+    dependency_overrides, each applied via `go get <path>@<version>`) mutate
+    go.mod/go.sum only in the vendor-archive checkout, never in Source0.
+    Failing closed here catches a missing spec patch at vendor-archive
+    generation time, for every gorget-migrated Go package, instead of
+    relying solely on rpms/test/test_govendortools_gomod_patch_sync.py to
+    catch it later (that check still matters for non-gorget packages, which
+    never reach this code at all). See gomod_patch_sync.py's module
+    docstring for the full mechanism -- the same check also runs from
+    transform/vendor_pin.py, since a `vendor-pin` step mutates go.mod the
+    same way.
+    """
+    if not (_pre_commands_mutate_gomod(config.pre_commands) or config.dependency_overrides):
+        return
+
+    raise_unless_spec_patches_gomod(
+        package_dir,
+        reason=(
+            f"{package_dir / _CONFIG_FILENAME}'s [archive] pre_commands or "
+            f"dependency_overrides mutate go.mod/go.sum (a direct edit, `go get`, "
+            f"or `go mod tidy`/`edit`)"
+        ),
+    )
+
+
 class GoVendor:
     def vendor(
         self,
@@ -56,6 +99,8 @@ class GoVendor:
         use_workspace: bool = True,
     ) -> Path:
         config = _load_archive_config(package_dir)
+        if package_dir is not None:
+            _validate_gomod_patch_sync(package_dir, config)
 
         commands = [
             *config.pre_commands,
