@@ -1,4 +1,4 @@
-"""End-to-end: git (fetch) -> vendor-pin -> vendor (transform) through the real
+"""End-to-end: git (fetch) -> vendor-bump -> vendor (transform) through the real
 PipelineRunner, with mocked subprocess calls -- confirms the pinned dependency
 actually reaches the `go mod edit` call before vendoring runs, and that the
 final emitted artifact is the vendor archive it produced.
@@ -20,11 +20,11 @@ fetch:
     repo: "https://example.com/example.git"
     ref: "v${VERSION}"
 transform:
-  - type: vendor-pin
+  - type: vendor-bump
     ecosystem: go
     pins:
       - dependency: "golang.org/x/net"
-        minimum-version: "0.23.0"
+        version: "0.23.0"
   - type: vendor
     ecosystem: go
 """
@@ -77,14 +77,18 @@ def _fake_run(calls):
     return run
 
 
-def test_git_fetch_then_vendor_pin_then_vendor(tmp_path, mocker):
+def test_git_fetch_then_vendor_bump_then_vendor(tmp_path, mocker):
     mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
     calls = []
     fake_run = _fake_run(calls)
     mocker.patch("gorget.fetch.git.run", side_effect=fake_run)
-    mocker.patch("gorget.transform.vendor_pin.run", side_effect=fake_run)
+    mocker.patch("gorget.transform.vendor_bump.run", side_effect=fake_run)
     mocker.patch("gorget.fetch.vendor.go.run", side_effect=fake_run)
+    # This test mocks the package-manager calls, so the real resolver can't see
+    # a bumped version -- disable skip-check/post-verify to keep it focused on
+    # stage wiring (bump runs before vendor, artifacts produced).
+    mocker.patch.dict("gorget.transform.vendor_bump._RESOLVERS", clear=True)
 
     ctx = make_ctx(tmp_path, PIPELINE_YAML)
     spec = resolve_pipeline_spec(ctx)
@@ -95,7 +99,7 @@ def test_git_fetch_then_vendor_pin_then_vendor(tmp_path, mocker):
     assert fetch_result.status == "success"
     assert transform_result.status == "success"
 
-    # The vendor-pin edit ran before vendor ran.
+    # The vendor-bump edit ran before vendor ran.
     edit_call = next(c for c in calls if "edit" in c[0])
     assert edit_call[0] == ["go", "mod", "edit", "-require=golang.org/x/net@0.23.0"]
 

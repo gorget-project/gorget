@@ -11,8 +11,8 @@ from gorget.config.schema import (
     StripTarballStep,
     ToolchainEntry,
     UrlStep,
+    VendorBumpStep,
     VendorModule,
-    VendorPinStep,
     VendorStep,
 )
 
@@ -66,8 +66,8 @@ def test_strip_tarball_step_defaults():
     assert step.paths == []
 
 
-def test_vendor_pin_step_default_single_module():
-    step = VendorPinStep(ecosystem="go")
+def test_vendor_bump_step_default_single_module():
+    step = VendorBumpStep(ecosystem="go")
     assert step.modules == [VendorModule(path=".")]
     assert step.pins == []
 
@@ -111,3 +111,40 @@ def test_accepted_checksum_entry_fields():
     assert entry.file == "foo.tar.gz"
     assert entry.checksum == "deadbeef"
     assert entry.reason == "republished"
+
+
+def test_vendor_platform_fields():
+    from gorget.config.schema import VendorPlatform
+    p = VendorPlatform(cpu="x64", os="linux", libc="glibc")
+    assert p.cpu == "x64"
+    assert p.os == "linux"
+    assert p.libc == "glibc"
+
+
+def test_vendor_step_accepts_pnpm_ecosystem():
+    step = VendorStep(ecosystem="pnpm")
+    assert step.ecosystem == "pnpm"
+
+
+def test_vendor_step_accepts_yarn_ecosystem():
+    step = VendorStep(ecosystem="yarn")
+    assert step.ecosystem == "yarn"
+
+
+def test_vendor_step_platforms_default_none():
+    step = VendorStep(ecosystem="npm")
+    assert step.platforms is None
+
+
+def test_vendor_step_with_platforms():
+    from gorget.config.schema import VendorPlatform
+    platforms = [VendorPlatform(cpu="x64", os="linux", libc="glibc")]
+    step = VendorStep(ecosystem="npm", platforms=platforms)
+    assert step.platforms == platforms
+
+
+def test_default_npm_platforms():
+    from gorget.config.schema import _DEFAULT_NPM_PLATFORMS, VendorPlatform
+    assert len(_DEFAULT_NPM_PLATFORMS) == 2
+    assert _DEFAULT_NPM_PLATFORMS[0] == VendorPlatform(cpu="x64", os="linux", libc="glibc")
+    assert _DEFAULT_NPM_PLATFORMS[1] == VendorPlatform(cpu="arm64", os="linux", libc="glibc")
