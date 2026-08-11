@@ -83,7 +83,7 @@ violation) mean.
 |---|---|---|
 | Clone a git repo instead of downloading a tarball | `fetch: git` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/) |
 | Vendor Go/npm/Cargo/Composer dependencies | `fetch: vendor` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/) |
-| Strip paths from a fetched tarball, build UI assets, or run an arbitrary command | `transform:` | README [`transform:`](../../README.md#transform) |
+| Strip paths from a fetched tarball, build UI assets, pack an explicit file list into an archive, or run an arbitrary command | `transform:` | README [`transform:`](../../README.md#transform) |
 | Verify a GPG signature or a checksums-listing file | `verify:` | [`verify-demo`](../../examples/verify-demo/) |
 | Enforce a dependency version floor, license, or audit result | `policy:` | [Add a policy check to an existing pipeline](add-a-policy-check.md) |
 | Refresh generated metadata (e.g. a `Provides:` block) after everything else has run | `post:` | README [`post:`](../../README.md#post) |

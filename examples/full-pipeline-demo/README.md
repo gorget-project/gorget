@@ -3,7 +3,7 @@
 Runnable, non-pytest example exercising every stage of gorget's pipeline
 together, kept up to date as new primitives are added -- if you add a new
 step type or check, add it here too. It's a superset of
-`../go-pipeline-demo` (all five Transform step types) with a Verify check
+`../go-pipeline-demo` (all six Transform step types) with a Verify check
 and a Policy check layered on top.
 
 | Stage | Step | What it does here |
@@ -15,6 +15,7 @@ and a Policy check layered on top.
 | Transform | `vendor` | Vendors the now-bumped dependency |
 | Transform | `build-ui` | Runs `npm run build` in `ui/`, archives `dist/` |
 | Transform | `run` | Escape hatch: runs `go version`, archives the output file |
+| Transform | `pack` | Packs `setup-demo-repo.sh` (already in `--package-dir`) into a deterministic archive |
 | Verify | `gpg-signature` | Verifies GNU Hello's tarball against its real upstream maintainer key |
 | Verify | *(implicit)* | Re-publication detection runs automatically since `sources` exists here |
 | Policy | `vendor-constraints` | Confirms `vendor-pin`'s bump to `rsc.io/quote` actually took effect |
@@ -68,6 +69,9 @@ tar tzf /tmp/gorget-full-output/demo-ui-assets.tar.gz
 
 # run: the escape-hatch command's declared output, archived verbatim
 cat /tmp/gorget-full-output/go-version.txt
+
+# pack: setup-demo-repo.sh packed verbatim, at its own relative path
+tar tzf /tmp/gorget-full-output/demo-packaging-scripts.tar.gz
 
 # every stage's status, every check's result, every artifact's checksum
 cat /tmp/gorget-full-output/report.json

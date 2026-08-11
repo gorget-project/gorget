@@ -12,6 +12,7 @@ repo:
 | `transform: vendor` | Vendors the now-bumped dependency (reused from `fetch:`) |
 | `transform: build-ui` | Runs `npm run build` in `ui/`, archives `dist/` |
 | `transform: run` | Escape hatch: runs `go version`, archives the output file |
+| `transform: pack` | Packs `setup-demo-repo.sh` (already in `--package-dir`) into a deterministic archive |
 
 Requires `git`, `go`, and `npm` on `PATH`, plus network access to
 `proxy.golang.org`.
@@ -64,6 +65,9 @@ tar tzf /tmp/gorget-demo-output/demo-ui-assets.tar.gz
 
 # run: the escape-hatch command's declared output, archived verbatim
 cat /tmp/gorget-demo-output/go-version.txt
+
+# pack: setup-demo-repo.sh packed verbatim, at its own relative path
+tar tzf /tmp/gorget-demo-output/demo-packaging-scripts.tar.gz
 
 # every stage's status + every artifact's checksum
 cat /tmp/gorget-demo-output/report.json
