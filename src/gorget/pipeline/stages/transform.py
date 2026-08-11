@@ -13,6 +13,7 @@ from typing import Any, ClassVar
 
 from gorget.config.schema import (
     BuildUiStep,
+    PackStep,
     PipelineSpec,
     RunStep,
     StripTarballStep,
@@ -26,6 +27,7 @@ from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.transform.build_ui import BuildUiHandler
+from gorget.transform.pack import PackHandler
 from gorget.transform.run_step import RunHandler
 from gorget.transform.strip_tarball import StripTarballHandler
 from gorget.transform.vendor_pin import VendorPinHandler
@@ -52,6 +54,7 @@ _HANDLERS: dict[type, Any] = {
     BuildUiStep: BuildUiHandler(),
     RunStep: RunHandler(),
     VendorStep: _VendorStepAdapter(),
+    PackStep: PackHandler(),
 }
 
 logger = logging.getLogger("gorget.pipeline")

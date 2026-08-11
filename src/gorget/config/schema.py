@@ -97,6 +97,21 @@ class StripTarballStep:
 
 
 @dataclass(frozen=True, kw_only=True)
+class PackStep:
+    type: Literal["pack"] = "pack"
+    # Paths relative to --package-dir, included in the archive verbatim at
+    # their own relative path (no injected wrapper directory) -- for
+    # packaging a handful of files already checked into the package's own
+    # directory (e.g. helper scripts) into a single deterministic archive,
+    # without depending on the host's tar/gzip binary version: gzip's
+    # compressed output isn't uniquely determined by its input, so two
+    # different tar/gzip builds can compress byte-identical content into
+    # different bytes.
+    files: list[str]
+    output: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class VendorPinEntry:
     dependency: str
     minimum_version: str
@@ -151,7 +166,7 @@ class RunStep:
 # `vendor` is reused verbatim from the fetch schema: a `transform:` list can run
 # `vendor-pin` then `vendor` in order (edit lockfiles, then vendor) since Fetch's
 # own `vendor` step always runs before Transform and can't do that ordering itself.
-TransformStep = StripTarballStep | VendorPinStep | BuildUiStep | RunStep | VendorStep
+TransformStep = StripTarballStep | VendorPinStep | BuildUiStep | RunStep | VendorStep | PackStep
 
 TRANSFORM_STEP_TYPES: dict[str, type] = {
     "strip-tarball": StripTarballStep,
@@ -159,6 +174,7 @@ TRANSFORM_STEP_TYPES: dict[str, type] = {
     "build-ui": BuildUiStep,
     "run": RunStep,
     "vendor": VendorStep,
+    "pack": PackStep,
 }
 
 

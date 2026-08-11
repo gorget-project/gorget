@@ -76,6 +76,7 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 | `vendor` | Same step as `fetch:`'s `vendor` (reused) -- lets `vendor-pin` run before vendoring, since `fetch:` always runs before `transform:` |
 | `build-ui` | Run `npm`/`yarn run <script>` and archive the build output directory |
 | `run` | Escape hatch: an arbitrary command, with declared output paths archived as new artifacts afterward |
+| `pack` | Archive an explicit list of files already in `--package-dir` into a single deterministic tarball, each at its own relative path |
 
 `vendor-pin`/`vendor`/`build-ui`/`run` all operate against a shared working
 source tree: a `git` fetch step's checkout if one ran, otherwise the sole
