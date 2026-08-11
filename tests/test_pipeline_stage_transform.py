@@ -3,6 +3,7 @@ import tarfile
 from unittest.mock import Mock
 
 from gorget.config.schema import (
+    PackStep,
     PipelineSpec,
     RunStep,
     StripTarballStep,
@@ -75,6 +76,24 @@ def test_dispatches_strip_tarball_and_replaces_artifact(tmp_path):
     with tarfile.open(state.artifacts[0].path) as tar:
         names = tar.getnames()
     assert not any("drop.txt" in n for n in names)
+
+
+def test_dispatches_pack_and_appends_artifact(tmp_path):
+    package_dir = tmp_path / "package"
+    package_dir.mkdir()
+    (package_dir / "Makefile").write_text("all:\n")
+
+    ctx = make_run_ctx(package_dir)
+    state = make_state(tmp_path / "work")
+    spec = PipelineSpec(
+        transform=TransformSection(steps=[PackStep(files=["Makefile"], output="scripts.tar.gz")])
+    )
+
+    result = TransformStage().run(ctx, spec, state)
+
+    assert result.status == "success"
+    assert len(state.artifacts) == 1
+    assert state.artifacts[0].output_name == "scripts.tar.gz"
 
 
 def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
