@@ -51,6 +51,15 @@ transform:
     outputs:
       - go-version.txt
 
+  # Packs a file already sitting in --package-dir (this directory) verbatim
+  # -- unlike everything above, which operates against demo-repo/'s fetched
+  # checkout. Built with Python's own tarfile/gzip rather than the system
+  # tar/gzip binaries, so it's byte-identical regardless of which
+  # environment runs it.
+  - type: pack
+    files: ["setup-demo-repo.sh"]
+    output: "demo-packaging-scripts.tar.gz"
+
 # toolchain: only *validates* against whatever's already installed -- it
 # never fetches or switches versions (see gorget/toolchain.py). Uncomment
 # and set `version:` to your own `go version` output (setup-demo-repo.sh
