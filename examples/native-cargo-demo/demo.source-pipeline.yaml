@@ -1,0 +1,24 @@
+# The minimal real pipeline for a *native* package with a vendored
+# dependency: no Fedora dist-git history, no existing Source0 tarball URL --
+# gorget is the only thing that produces these two archives at all. `git` is
+# mandatory for any native package; `vendor` is here only because this one
+# happens to have a Cargo dependency, same as it would for any package.
+fetch:
+  - type: git
+    repo: "./demo-repo"
+    ref: "v${VERSION}"
+    # "${PACKAGE}-${VERSION}.tar.gz" is already the default archive_name for
+    # a git step -- spelled out here just to show it. The archive's internal
+    # top-level directory is derived from this name (minus the .tar.gz
+    # suffix), not from demo-repo's own directory name or Cargo.toml's
+    # package name -- see demo.spec's %prep for why that distinction matters.
+    archive_name: "${PACKAGE}-${VERSION}.tar.gz"
+
+  - type: vendor
+    ecosystem: cargo
+    # Unlike the git step above, this ISN'T the default: a bare `vendor`
+    # step's default archive_name is "${PACKAGE}-vendor.tar.gz" -- no
+    # version, always gzip. Overridden here to match what demo.spec's
+    # Source1 expects. Nothing cross-checks the two agree; pick a
+    # convention and keep the spec in sync by hand.
+    archive_name: "${PACKAGE}-${VERSION}-vendor.tar.xz"

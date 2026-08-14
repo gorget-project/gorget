@@ -3,8 +3,9 @@
 # runs each demo's setup script where one exists, then runs gorget against
 # each pipeline YAML with the same command shown in that example's README.
 #
-# Requires: rpmspec, gpg, git, go, npm on PATH, plus network access (real
-# fetches/vendoring -- these are not mocked, same as the examples themselves).
+# Requires: rpmspec, gpg, git, go, npm, cargo on PATH, plus network access
+# (real fetches/vendoring -- these are not mocked, same as the examples
+# themselves).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -45,6 +46,17 @@ run_demo "go-pipeline-demo"
     --package-dir . \
     --pipeline-file demo.source-pipeline.yaml \
     --output-dir /tmp/gorget-examples/go-pipeline-demo \
+    --debug
+)
+
+run_demo "native-cargo-demo"
+(
+  cd examples/native-cargo-demo
+  ./setup-demo-repo.sh
+  gorget --version 1.0.0 \
+    --package-dir . \
+    --pipeline-file demo.source-pipeline.yaml \
+    --output-dir /tmp/gorget-examples/native-cargo-demo \
     --debug
 )
 

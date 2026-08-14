@@ -26,6 +26,7 @@ parsing, variable substitution, the stage pipeline, and a minimal Emit).
 - [Add a policy check to an existing pipeline](docs/how-to/add-a-policy-check.md)
 - [Add a post: step to refresh generated metadata](docs/how-to/add-a-post-step.md)
 - [Fetch a source whose URL you don't know until runtime](docs/how-to/discover-additional-sources.md)
+- [Fetch from a private git repo](docs/how-to/fetch-from-a-private-repo.md)
 - [Debug a failing pipeline locally](docs/how-to/debug-a-failing-pipeline.md)
 
 ## CLI interface
@@ -64,6 +65,62 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `url` | Download an explicit URL not declared in the spec |
 | `git` | Clone a repo at a tag/branch/commit, archive the checkout (or a subdir) |
 | `vendor` | Generate a Go/npm/Cargo/Composer vendor archive (multi-submodule aware) |
+
+`git` (or another real fetch step) is mandatory for a **native package** (no
+Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
+there's no bare-`spec-source` fallback the way an already-Fedora-derived
+package has. `vendor` is only needed on top of that if the package actually
+has dependencies to vendor -- exactly the same condition as for any package,
+native or not, nothing about it is native-specific. `transform:`/`verify:`/
+`policy:`/`post:` are all still available too, same as any other pipeline --
+see [`native-cargo-demo`](examples/native-cargo-demo/) for a native package
+that happens to need both `git` and `vendor`.
+
+```yaml
+fetch:
+  - type: git
+    repo: "${UPSTREAM_REPO}"   # or a literal URL/local path
+    ref: "v${VERSION}"          # tag, branch, or commit SHA
+    shallow: true                # default; a SHA-like ref falls back to a
+                                  # partial clone instead of true --depth 1
+    subdir: null                  # archive just this subdir of the checkout
+    archive_name: "${PACKAGE}-${VERSION}.tar.gz"  # default shown; optional
+
+  - type: vendor
+    ecosystem: cargo              # go | npm | cargo | composer
+    archive_name: "${PACKAGE}-${VERSION}-vendor.tar.xz"  # see note below
+    modules:                       # default: [{path: "."}] -- a single
+      - path: "."                  # module rooted at the checkout itself
+        name: null                  # explicit label (multi-module archives
+                                     # only; see combine.py for etcd's case)
+```
+
+`git`'s `archive_name` defaults to `${PACKAGE}-${VERSION}.tar.gz` if
+omitted. `vendor`'s default is **not** analogous -- `${PACKAGE}-vendor.tar.gz`,
+with no version and always gzip -- so a pipeline that wants a versioned
+and/or differently-compressed vendor archive (`.tar.bz2`/`.tar.xz`, both
+valid, see `gorget/util/archive.py`) must set `archive_name` explicitly.
+Nothing cross-checks either default or override against what the spec
+file's `Source0`/`SourceN` actually declare, or against `%prep`'s
+`%autosetup -n` (which must match the *archive's* internal top-level
+directory -- itself just `archive_name` minus its compression suffix, not
+the upstream repo's own directory name) -- a mismatch surfaces as a `%prep`
+failure several steps removed from the pipeline YAML that caused it.
+
+`vendor`'s `modules` lets one archive combine several submodules (e.g. an
+etcd-style repo with independent `server`/`etcdctl`/`etcdutl` Go modules) --
+each gets its own labeled top-level directory in the combined archive unless
+there's exactly one module with no explicit `name`, which instead produces a
+bare `vendor/` at the archive root.
+
+**`git` doesn't manage credentials.** It shells out to a plain `git
+clone`/`git checkout`, inheriting whatever ambient git configuration the
+process invoking gorget already has (a credential helper, an SSH agent, a
+`url.insteadOf` rewrite, `.netrc`) -- there's no gorget-level flag or config
+field for a token or key. A private `repo:` with no such ambient auth fails
+closed with git's own `fatal: could not read Username for '...': terminal
+prompts disabled`. See
+[Fetch from a private git repo](docs/how-to/fetch-from-a-private-repo.md).
 
 ### `transform:`
 
