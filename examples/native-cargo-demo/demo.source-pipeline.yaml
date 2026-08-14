@@ -1,6 +1,8 @@
-# The minimal real pipeline for a *native* package: no Fedora dist-git
-# history, no existing Source0 tarball URL -- gorget is the only thing that
-# produces these two archives at all.
+# The minimal real pipeline for a *native* package with a vendored
+# dependency: no Fedora dist-git history, no existing Source0 tarball URL --
+# gorget is the only thing that produces these two archives at all. `git` is
+# mandatory for any native package; `vendor` is here only because this one
+# happens to have a Cargo dependency, same as it would for any package.
 fetch:
   - type: git
     repo: "./demo-repo"

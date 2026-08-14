@@ -29,14 +29,17 @@ You need a real pipeline YAML as soon as any of these apply:
 above assumes you're starting from a spec that already has a real `Source0`
 tarball URL to fall back to or add a check against. A brand-new native
 package has no such URL -- there's nothing upstream ever published as a
-tarball, so `fetch: git` + `fetch: vendor` (if there are vendored
-dependencies) are mandatory rather than one option among several: there's no
-fallback fetch to skip them the way an already-Fedora-derived package can.
-(`transform:`/`verify:`/`policy:`/`post:` are all still available on top, if
-your package needs them -- being native only affects `fetch:`.) See
-[`native-cargo-demo`](../../examples/native-cargo-demo/) for that minimal
-floor end to end, including a gotcha specific to it: `%prep`'s
-`%autosetup -n` has to match the *archive's* internal directory name (which
+tarball, so `fetch: git` (or another real fetch step) is mandatory rather
+than one option among several: there's no bare-`spec-source` fallback the
+way an already-Fedora-derived package has. `fetch: vendor` is a separate
+question -- add it only if the package actually has dependencies to vendor,
+exactly the same condition as for any package, native or not.
+(`transform:`/`verify:`/`policy:`/`post:` are all still available too, if
+your package needs them -- being native only forces `fetch:`, nothing else.)
+See [`native-cargo-demo`](../../examples/native-cargo-demo/) for a native
+package that happens to need both `git` and `vendor`, including a gotcha
+specific to it: `%prep`'s `%autosetup -n` has to match the *archive's*
+internal directory name (which
 gorget derives from `archive_name`), not the upstream repo's own directory
 naming.
 
