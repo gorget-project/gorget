@@ -66,10 +66,12 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `git` | Clone a repo at a tag/branch/commit, archive the checkout (or a subdir) |
 | `vendor` | Generate a Go/npm/Cargo/Composer vendor archive (multi-submodule aware) |
 
-`git` and `vendor` are the whole pipeline for a **native package** (no
-Fedora dist-git history, no `Source0` tarball URL to fall back to or add
-verification to) -- see
-[`native-cargo-demo`](examples/native-cargo-demo/) for that minimal case.
+`git` and `vendor` are the minimum a **native package** (no Fedora dist-git
+history, so no `Source0` tarball URL to fall back to) needs just to produce
+its sources at all -- there's no fallback fetch to skip them the way an
+already-Fedora-derived package can. `transform:`/`verify:`/`policy:`/`post:`
+are all still available on top, same as any other pipeline -- see
+[`native-cargo-demo`](examples/native-cargo-demo/) for that floor case.
 
 ```yaml
 fetch:

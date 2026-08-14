@@ -30,10 +30,12 @@ above assumes you're starting from a spec that already has a real `Source0`
 tarball URL to fall back to or add a check against. A brand-new native
 package has no such URL -- there's nothing upstream ever published as a
 tarball, so `fetch: git` + `fetch: vendor` (if there are vendored
-dependencies) aren't one option among several, they're the entire pipeline,
-and gorget's own output is the only place the source/vendor archives will
-ever exist. See [`native-cargo-demo`](../../examples/native-cargo-demo/) for
-that minimal case end to end, including a gotcha specific to it: `%prep`'s
+dependencies) are mandatory rather than one option among several: there's no
+fallback fetch to skip them the way an already-Fedora-derived package can.
+(`transform:`/`verify:`/`policy:`/`post:` are all still available on top, if
+your package needs them -- being native only affects `fetch:`.) See
+[`native-cargo-demo`](../../examples/native-cargo-demo/) for that minimal
+floor end to end, including a gotcha specific to it: `%prep`'s
 `%autosetup -n` has to match the *archive's* internal directory name (which
 gorget derives from `archive_name`), not the upstream repo's own directory
 naming.

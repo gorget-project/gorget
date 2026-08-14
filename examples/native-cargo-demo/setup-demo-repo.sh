@@ -2,8 +2,9 @@
 # Creates demo-repo/: a tiny real Cargo project, tagged v1.0.0, standing in
 # for a native package's upstream git history -- unlike every other example
 # here, there is no tarball URL anywhere to fall back to or fetch a signature
-# for. `fetch: git` + `fetch: vendor` (see demo.source-pipeline.yaml) *are*
-# the whole pipeline.
+# for. This demo's pipeline (see demo.source-pipeline.yaml) needs nothing
+# beyond `fetch: git` + `fetch: vendor`, though a real native package can
+# still add transform:/verify:/policy:/post: on top like any other.
 set -euo pipefail
 cd "$(dirname "$0")"
 

@@ -4,12 +4,15 @@ Every other example here starts from a package that already has a real
 `Source0` tarball URL -- something to fetch, add a signature check to, or
 fall back to entirely. A **native** package (no Fedora dist-git history) has
 none of that: there's no upstream tarball URL to declare in the first place,
-because nobody has ever cut one. `fetch: git` + `fetch: vendor` aren't one
-option among several here -- they're the entire pipeline, and gorget's own
-output is the only place the source/vendor archives ever exist.
+because nobody has ever cut one. `fetch: git` + `fetch: vendor` are
+mandatory here rather than one option among several -- there's no fallback
+fetch to skip them, and gorget's own output is the only place the
+source/vendor archives ever exist.
 
-This is that minimal case, stripped to just the two steps it actually needs
--- no `spec-source`, no `verify:`, no `transform:`. See
+That doesn't mean the rest of the pipeline is off the table -- a native
+package can still have `transform:`/`verify:`/`policy:`/`post:` like any
+other. This example just doesn't need any of them, so it's stripped to the
+two `fetch:` steps that actually are mandatory here. See
 [`go-pipeline-demo`](../go-pipeline-demo/) once you need more than this; this
 example is deliberately the floor, not the ceiling, and uses Cargo rather
 than Go to cover the one vendor ecosystem none of the other examples touch.
