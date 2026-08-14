@@ -25,6 +25,19 @@ You need a real pipeline YAML as soon as any of these apply:
   re-publication guard (see below)
 - You want a policy check (CVE version floor, license compliance, audit)
 
+**Packaging a native project with no Fedora dist-git history?** All of the
+above assumes you're starting from a spec that already has a real `Source0`
+tarball URL to fall back to or add a check against. A brand-new native
+package has no such URL -- there's nothing upstream ever published as a
+tarball, so `fetch: git` + `fetch: vendor` (if there are vendored
+dependencies) aren't one option among several, they're the entire pipeline,
+and gorget's own output is the only place the source/vendor archives will
+ever exist. See [`native-cargo-demo`](../../examples/native-cargo-demo/) for
+that minimal case end to end, including a gotcha specific to it: `%prep`'s
+`%autosetup -n` has to match the *archive's* internal directory name (which
+gorget derives from `archive_name`), not the upstream repo's own directory
+naming.
+
 ## 2. Start from the smallest real pipeline
 
 The simplest real pipeline still declares `fetch:` explicitly -- e.g. to add
@@ -81,8 +94,9 @@ violation) mean.
 
 | You need to... | Add | See |
 |---|---|---|
-| Clone a git repo instead of downloading a tarball | `fetch: git` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/) |
-| Vendor Go/npm/Cargo/Composer dependencies | `fetch: vendor` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/) |
+| Clone a git repo instead of downloading a tarball | `fetch: git` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/), or [`native-cargo-demo`](../../examples/native-cargo-demo/) for the minimal git-only case |
+| Vendor Go/npm/Cargo/Composer dependencies | `fetch: vendor` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/) (Go), [`native-cargo-demo`](../../examples/native-cargo-demo/) (Cargo) |
+| Clone a *private* repo | `fetch: git` + ambient git auth | [Fetch from a private git repo](fetch-from-a-private-repo.md) |
 | Strip paths from a fetched tarball, build UI assets, pack an explicit file list into an archive, or run an arbitrary command | `transform:` | README [`transform:`](../../README.md#transform) |
 | Verify a GPG signature or a checksums-listing file | `verify:` | [`verify-demo`](../../examples/verify-demo/) |
 | Enforce a dependency version floor, license, or audit result | `policy:` | [Add a policy check to an existing pipeline](add-a-policy-check.md) |

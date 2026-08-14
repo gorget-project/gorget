@@ -77,7 +77,11 @@ that failed.
 
 - **`fetch` failed**: almost always a real network/URL/ref problem, or a
   spec macro (`${VERSION}`, `%{version}`) not resolving the way you expected
-  -- `--debug` shows the exact resolved URL/command.
+  -- `--debug` shows the exact resolved URL/command. A `git` step failing
+  with `could not read Username`/`Authentication failed` means missing
+  ambient git credentials, not a gorget bug or a YAML mistake -- gorget's
+  `git` step has no credential handling of its own, see
+  [Fetch from a private git repo](fetch-from-a-private-repo.md).
 - **`transform`/`post` failed**: a `run:` step's script exited non-zero --
   `--debug` captures its stdout/stderr even though the top-level error
   message only includes stderr.
