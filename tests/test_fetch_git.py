@@ -44,6 +44,21 @@ def _fake_clone(args, cwd=None):
     return _ok()
 
 
+def _fake_init_fetch_checkout(args, cwd=None):
+    """Simulate `git init <dest>` + `fetch`/`checkout` run with cwd=<dest>,
+    the SHA-ref path's targeted-fetch sequence, by creating a fake checkout
+    on disk once `git init` runs.
+    """
+    if len(args) >= 2 and args[1] == "init":
+        dest = Path(args[-1])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "README.md").write_text("hello\n")
+        git_dir = dest / ".git"
+        git_dir.mkdir(exist_ok=True)
+        (git_dir / "config").write_text("")
+    return _ok()
+
+
 def test_shallow_clone_of_tag_uses_branch_and_depth(tmp_path, mocker):
     mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mock_run = mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
@@ -64,16 +79,26 @@ def test_shallow_clone_of_tag_uses_branch_and_depth(tmp_path, mocker):
     assert (tmp_path / "foo-1.2.3.tar.gz").exists()
 
 
-def test_shallow_clone_of_sha_ref_falls_back_to_partial_clone(tmp_path, mocker):
+def test_shallow_clone_of_sha_ref_uses_targeted_fetch(tmp_path, mocker):
+    """A SHA-like ref uses `git init` + `fetch --depth 1 <repo> <sha>` +
+    `checkout FETCH_HEAD` instead of a full/partial clone: some git hosts
+    (e.g. googlesource.com mirrors) can fetch an arbitrary commit SHA
+    directly even when it isn't reachable from any advertised branch tip,
+    which neither a full clone (checkout fails: "unable to read tree") nor a
+    `--filter=blob:none` partial clone (checkout can hang lazily fetching
+    missing blobs) can reliably reach.
+    """
     mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
-    mock_run = mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
+    mock_run = mocker.patch("gorget.fetch.git.run", side_effect=_fake_init_fetch_checkout)
     step = GitStep(repo="https://example.com/repo.git", ref="abc1234", shallow=True)
     GitHandler().run(step, make_ctx(tmp_path))
 
-    clone_args = mock_run.call_args_list[0].args[0]
-    assert "--filter=blob:none" in clone_args
-    checkout_args = mock_run.call_args_list[1].args[0]
-    assert checkout_args == ["git", "checkout", "abc1234"]
+    calls = [c.args[0] for c in mock_run.call_args_list]
+    assert calls[0][:2] == ["git", "init"]
+    assert calls[1] == ["git", "remote", "add", "origin", "https://example.com/repo.git"]
+    assert calls[2] == ["git", "fetch", "--quiet", "--depth", "1", "origin", "abc1234"]
+    assert calls[3] == ["git", "checkout", "--quiet", "FETCH_HEAD"]
+    assert not any("--filter=blob:none" in c for c in calls)
 
 
 def test_full_clone_performs_explicit_checkout(tmp_path, mocker):
