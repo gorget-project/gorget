@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Creates demo-repo/: a tiny real Go module with a bit of everything the
 # pipeline in this directory exercises -- a dependency pinned to an old
-# version (vendor-pin), a docs/ dir that gets stripped from the source
-# tarball (strip-tarball), and a minimal npm UI project (build-ui).
+# version (vendor-pin), and a docs/ dir that gets stripped from the source
+# tarball (strip-tarball).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -36,17 +36,6 @@ mkdir -p docs
 cat > docs/internal-notes.md <<'EOF'
 Internal notes that shouldn't ship in the source tarball -- stripped by the
 `strip-tarball` transform step.
-EOF
-
-mkdir -p ui
-cat > ui/package.json <<'EOF'
-{
-  "name": "demo-ui",
-  "version": "1.0.0",
-  "scripts": {
-    "build": "mkdir -p dist && printf '<html><body>hello</body></html>' > dist/index.html"
-  }
-}
 EOF
 
 git init -q -b main
