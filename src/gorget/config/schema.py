@@ -64,11 +64,25 @@ class VendorModule:
 
 
 @dataclass(frozen=True, kw_only=True)
+class VendorPlatform:
+    cpu: str    # "x64", "arm64"
+    os: str     # "linux"
+    libc: str   # "glibc"
+
+
+_DEFAULT_NPM_PLATFORMS: list[VendorPlatform] = [
+    VendorPlatform(cpu="x64", os="linux", libc="glibc"),
+    VendorPlatform(cpu="arm64", os="linux", libc="glibc"),
+]
+
+
+@dataclass(frozen=True, kw_only=True)
 class VendorStep:
     type: Literal["vendor"] = "vendor"
-    ecosystem: Literal["go", "npm", "cargo", "composer"]
+    ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo", "composer"]
     archive_name: str | None = None
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
+    platforms: list[VendorPlatform] | None = None
 
 
 FetchStep = SpecUpdateStep | SpecSourceStep | UrlStep | GitStep | VendorStep
@@ -112,16 +126,16 @@ class PackStep:
 
 
 @dataclass(frozen=True, kw_only=True)
-class VendorPinEntry:
+class VendorBumpEntry:
     dependency: str
-    minimum_version: str
+    version: str    # "0.39.0" = minimum (>=), "~4.18" = prefix pin
 
 
 @dataclass(frozen=True, kw_only=True)
-class VendorPinStep:
-    type: Literal["vendor-pin"] = "vendor-pin"
-    ecosystem: Literal["go", "npm", "cargo"]
-    pins: list[VendorPinEntry] = field(default_factory=list)
+class VendorBumpStep:
+    type: Literal["vendor-bump"] = "vendor-bump"
+    ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo"]
+    pins: list[VendorBumpEntry] = field(default_factory=list)
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
 
 
@@ -164,13 +178,13 @@ class RunStep:
 
 
 # `vendor` is reused verbatim from the fetch schema: a `transform:` list can run
-# `vendor-pin` then `vendor` in order (edit lockfiles, then vendor) since Fetch's
+# `vendor-bump` then `vendor` in order (edit lockfiles, then vendor) since Fetch's
 # own `vendor` step always runs before Transform and can't do that ordering itself.
-TransformStep = StripTarballStep | VendorPinStep | BuildUiStep | RunStep | VendorStep | PackStep
+TransformStep = StripTarballStep | VendorBumpStep | BuildUiStep | RunStep | VendorStep | PackStep
 
 TRANSFORM_STEP_TYPES: dict[str, type] = {
     "strip-tarball": StripTarballStep,
-    "vendor-pin": VendorPinStep,
+    "vendor-bump": VendorBumpStep,
     "build-ui": BuildUiStep,
     "run": RunStep,
     "vendor": VendorStep,
@@ -234,8 +248,8 @@ class AcceptedChecksumsSection:
 @dataclass(frozen=True, kw_only=True)
 class VendorConstraintEntry:
     package: str
-    ecosystem: Literal["go", "npm", "cargo"]
-    # Minimum version -- "at least this version," same semantics as vendor-pin.
+    ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo"]
+    # Minimum version -- "at least this version," same semantics as vendor-bump.
     version: str
     reason: str
 
