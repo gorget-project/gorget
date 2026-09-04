@@ -30,7 +30,10 @@ _SLUG_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 # right commit. Surfaced as an explicit note (not silently dropped) since
 # --debug relays raw stderr verbatim and this reads as alarming out of
 # context.
-_BENIGN_ANNOTATED_TAG_RE = re.compile(r"^warning: refs/tags/\S+ [0-9a-f]+ is not a commit!$", re.MULTILINE)
+_BENIGN_ANNOTATED_TAG_RE = re.compile(
+    r"^warning: refs/tags/\S+ [0-9a-f]+ is not a commit!$",
+    re.MULTILINE,
+)
 
 
 def _looks_like_sha(ref: str) -> bool:
