@@ -3,7 +3,7 @@
 Runnable, non-pytest example exercising every stage of gorget's pipeline
 together, kept up to date as new primitives are added -- if you add a new
 step type or check, add it here too. It's a superset of
-`../go-pipeline-demo` (all five Transform step types) with a Verify check
+`../go-pipeline-demo` (all six Transform step types) with a Verify check
 and a Policy check layered on top.
 
 | Stage | Step | What it does here |
@@ -11,13 +11,14 @@ and a Policy check layered on top.
 | Fetch | `git` | Clones `demo-repo/`, a real Go module |
 | Fetch | `url` (×2) | Downloads GNU Hello's real tarball + its real detached GPG signature |
 | Transform | `strip-tarball` | Removes `docs/` from the Go source tarball |
-| Transform | `vendor-pin` | Bumps `rsc.io/quote` from `v1.0.0` to `v1.5.2` |
+| Transform | `vendor-bump` | Bumps `rsc.io/quote` from `v1.0.0` to `v1.5.2` |
 | Transform | `vendor` | Vendors the now-bumped dependency |
 | Transform | `build-ui` | Runs `npm run build` in `ui/`, archives `dist/` |
 | Transform | `run` | Escape hatch: runs `go version`, archives the output file |
+| Transform | `pack` | Packs `setup-demo-repo.sh` (already in `--package-dir`) into a deterministic archive |
 | Verify | `gpg-signature` | Verifies GNU Hello's tarball against its real upstream maintainer key |
 | Verify | *(implicit)* | Re-publication detection runs automatically since `sources` exists here |
-| Policy | `vendor-constraints` | Confirms `vendor-pin`'s bump to `rsc.io/quote` actually took effect |
+| Policy | `vendor-constraints` | Confirms `vendor-bump`'s bump to `rsc.io/quote` actually took effect |
 
 **Deliberately not included** (each already has its own focused, faster
 example -- duplicating them here would just make this slower to run without
@@ -60,7 +61,7 @@ ls /tmp/gorget-full-output
 # strip-tarball: docs/ is gone from the Go source tarball
 tar tzf /tmp/gorget-full-output/demo-main.tar.gz | grep docs   # <- prints nothing
 
-# vendor-pin + vendor: rsc.io/quote bumped and actually vendored
+# vendor-bump + vendor: rsc.io/quote bumped and actually vendored
 tar tzf /tmp/gorget-full-output/demo-vendor.tar.gz | grep quote
 
 # build-ui: the built dist/ output, archived
@@ -68,6 +69,9 @@ tar tzf /tmp/gorget-full-output/demo-ui-assets.tar.gz
 
 # run: the escape-hatch command's declared output, archived verbatim
 cat /tmp/gorget-full-output/go-version.txt
+
+# pack: setup-demo-repo.sh packed verbatim, at its own relative path
+tar tzf /tmp/gorget-full-output/demo-packaging-scripts.tar.gz
 
 # every stage's status, every check's result, every artifact's checksum
 cat /tmp/gorget-full-output/report.json
@@ -86,7 +90,7 @@ state before trying again.
 ## 4. See it fail closed
 
 Bump the Policy constraint above what's actually vendored, simulating the
-`vendor-pin` regression this check exists to catch
+`vendor-bump` regression this check exists to catch
 (see `../policy-demo/README.md` for the real incident):
 
 ```bash

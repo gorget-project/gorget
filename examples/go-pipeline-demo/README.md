@@ -8,13 +8,24 @@ repo:
 |---|---|
 | `fetch: git` | Clones `demo-repo/` |
 | `transform: strip-tarball` | Removes `docs/` from the source tarball |
-| `transform: vendor-pin` | Bumps `rsc.io/quote` from `v1.0.0` to `v1.5.2` |
+| `transform: vendor-bump` | Bumps `rsc.io/quote` from `v1.0.0` to `v1.5.2` |
 | `transform: vendor` | Vendors the now-bumped dependency (reused from `fetch:`) |
 | `transform: build-ui` | Runs `npm run build` in `ui/`, archives `dist/` |
 | `transform: run` | Escape hatch: runs `go version`, archives the output file |
+| `transform: pack` | Packs `setup-demo-repo.sh` (already in `--package-dir`) into a deterministic archive |
 
 Requires `git`, `go`, and `npm` on `PATH`, plus network access to
 `proxy.golang.org`.
+
+`demo.spec` declares `Patch0: 0001-bump-quote-gomod.patch`, a placeholder
+patch that bumps `rsc.io/quote` in `go.mod` to match what `vendor-bump` does
+below. `vendor-bump` mutates `go.mod` in the same checkout `fetch: {git}`
+already archived `Source0` from, so without an equivalent spec patch the
+vendor archive and the real build tree would require different versions of
+the same dependency -- `go build -mod=vendor` rejects that as inconsistent
+vendoring. gorget fails closed on this before vendoring runs (see
+[Hand-patch a vendored dependency, and stop it from regressing](../../docs/how-to/hand-patch-and-enforce-a-dependency-version.md)
+and `gorget/fetch/vendor/gomod_patch_sync.py`); remove `Patch0` to see it.
 
 ## 1. Set up the demo repo (once)
 
@@ -46,7 +57,7 @@ ls /tmp/gorget-demo-output
 # strip-tarball: docs/ is gone from the source tarball
 tar tzf /tmp/gorget-demo-output/demo-main.tar.gz | grep docs   # <- prints nothing
 
-# vendor-pin + vendor: rsc.io/quote bumped and actually vendored
+# vendor-bump + vendor: rsc.io/quote bumped and actually vendored
 tar tzf /tmp/gorget-demo-output/demo-vendor.tar.gz | grep quote
 
 # build-ui: the built dist/ output, archived
@@ -54,6 +65,9 @@ tar tzf /tmp/gorget-demo-output/demo-ui-assets.tar.gz
 
 # run: the escape-hatch command's declared output, archived verbatim
 cat /tmp/gorget-demo-output/go-version.txt
+
+# pack: setup-demo-repo.sh packed verbatim, at its own relative path
+tar tzf /tmp/gorget-demo-output/demo-packaging-scripts.tar.gz
 
 # every stage's status + every artifact's checksum
 cat /tmp/gorget-demo-output/report.json

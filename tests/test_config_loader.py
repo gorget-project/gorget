@@ -5,6 +5,7 @@ import pytest
 from gorget.config.loader import build_pipeline_spec, load_yaml, parse_pipeline_spec
 from gorget.config.schema import (
     BuildUiStep,
+    BundledProvidesStep,
     ChecksumFileStep,
     GitStep,
     GpgSignatureStep,
@@ -15,7 +16,8 @@ from gorget.config.schema import (
     StripTarballStep,
     ToolchainEntry,
     UrlStep,
-    VendorPinStep,
+    VendorBumpStep,
+    VendorModule,
     VendorStep,
 )
 from gorget.config.substitution import SubstitutionVars
@@ -112,13 +114,13 @@ def test_transform_strip_tarball_step_parses():
     assert step.paths == ["*/deps/bundled-openssl"]
 
 
-def test_transform_vendor_pin_then_vendor_sequencing():
+def test_transform_vendor_bump_then_vendor_sequencing():
     spec = build_pipeline_spec(
-        FIXTURES / "transform-vendor-pin.yaml", substitution_vars=make_vars()
+        FIXTURES / "transform-vendor-bump.yaml", substitution_vars=make_vars()
     )
-    assert isinstance(spec.transform.steps[0], VendorPinStep)
+    assert isinstance(spec.transform.steps[0], VendorBumpStep)
     assert spec.transform.steps[0].pins[0].dependency == "golang.org/x/net"
-    assert spec.transform.steps[0].pins[0].minimum_version == "0.23.0"
+    assert spec.transform.steps[0].pins[0].version == "0.23.0"
     assert isinstance(spec.transform.steps[1], VendorStep)
     assert spec.toolchain.entries == [ToolchainEntry(name="go", version="1.22.0")]
 
@@ -170,6 +172,46 @@ def test_post_run_step_artifacts_defaults_to_empty_list():
         {"post": [{"type": "run", "command": ["./refresh-provides.py"]}]}
     )
     assert spec.post.steps[0].artifacts == []
+
+
+def test_post_bundled_provides_step_parses():
+    spec = parse_pipeline_spec(
+        {
+            "post": [
+                {
+                    "type": "bundled-provides",
+                    "ecosystem": "npm",
+                    "scope": "all",
+                    "output": "provides.inc",
+                    "modules": [{"path": "ui"}],
+                }
+            ]
+        }
+    )
+    step = spec.post.steps[0]
+    assert isinstance(step, BundledProvidesStep)
+    assert step.ecosystem == "npm"
+    assert step.scope == "all"
+    assert step.output == "provides.inc"
+    assert step.modules == [VendorModule(path="ui")]
+
+
+def test_post_bundled_provides_defaults():
+    spec = parse_pipeline_spec(
+        {"post": [{"type": "bundled-provides", "ecosystem": "pnpm"}]}
+    )
+    step = spec.post.steps[0]
+    assert isinstance(step, BundledProvidesStep)
+    assert step.scope == "production"
+    assert step.output == "bundled-npm-provides.inc"
+    assert step.modules == [VendorModule(path=".")]
+
+
+def test_post_bundled_provides_unknown_field_raises():
+    with pytest.raises(GorgetConfigError, match="Invalid bundled-provides post step"):
+        parse_pipeline_spec(
+            {"post": [{"type": "bundled-provides", "ecosystem": "npm", "bogus": 1}]}
+        )
 
 
 def test_verify_gpg_signature_step_parses():

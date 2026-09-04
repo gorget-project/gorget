@@ -7,7 +7,7 @@ enforces dependency policy, and emits lookaside-ready artifacts.
 
 It's a plain CLI tool, installed like any other build dependency (e.g. via
 RPM) and invoked directly -- its `fetch:`/`vendor:` steps already run
-untrusted third-party code the same way `go-vendor-tools`/`npm`/`cargo` do,
+untrusted third-party code the same way `go-vendor-tools`, `npm`, `cargo`, and Maven do,
 so it doesn't need or get container isolation those tools don't have either.
 
 Each package gets a declarative `<package>.source-pipeline.yaml` describing
@@ -23,9 +23,11 @@ parsing, variable substitution, the stage pipeline, and a minimal Emit).
 - [Getting started: write your first source-pipeline.yaml](docs/how-to/getting-started.md)
 - [Add source verification for a new upstream](docs/how-to/verify-a-new-upstream.md)
 - [Hand-patch a vendored dependency, and stop it from regressing](docs/how-to/hand-patch-and-enforce-a-dependency-version.md)
+- [Maven bump and offline vendor example](examples/maven-pipeline-demo/)
 - [Add a policy check to an existing pipeline](docs/how-to/add-a-policy-check.md)
 - [Add a post: step to refresh generated metadata](docs/how-to/add-a-post-step.md)
 - [Fetch a source whose URL you don't know until runtime](docs/how-to/discover-additional-sources.md)
+- [Fetch from a private git repo](docs/how-to/fetch-from-a-private-repo.md)
 - [Debug a failing pipeline locally](docs/how-to/debug-a-failing-pipeline.md)
 
 ## CLI interface
@@ -62,8 +64,71 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `spec-update` | Bump `Version:`/reset `Release:`/apply declared substitutions, before Source URLs resolve |
 | `spec-source` | Download the spec's `Source0`/`SourceN` URLs (macro-resolved), by index or all |
 | `url` | Download an explicit URL not declared in the spec |
-| `git` | Clone a repo at a tag/branch/commit, archive the checkout (or a subdir) |
-| `vendor` | Generate a Go/npm/Cargo/Composer vendor archive (multi-submodule aware) |
+| `git` | Clone a repo at a tag/branch/commit (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
+| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm) |
+
+`git` (or another real fetch step) is mandatory for a **native package** (no
+Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
+there's no bare-`spec-source` fallback the way an already-Fedora-derived
+package has. `vendor` is only needed on top of that if the package actually
+has dependencies to vendor -- exactly the same condition as for any package,
+native or not, nothing about it is native-specific. `transform:`/`verify:`/
+`policy:`/`post:` are all still available too, same as any other pipeline --
+see [`native-cargo-demo`](examples/native-cargo-demo/) for a native package
+that happens to need both `git` and `vendor`.
+
+```yaml
+fetch:
+  - type: git
+    repo: "${UPSTREAM_REPO}"   # or a literal URL/local path
+    ref: "v${VERSION}"          # tag, branch, or commit SHA
+    shallow: true                # default; a SHA-like ref falls back to a
+                                  # partial clone instead of true --depth 1
+    subdir: null                  # archive just this subdir of the checkout
+    archive_name: "${PACKAGE}-${VERSION}.tar.gz"  # default shown; optional
+
+  - type: vendor
+    ecosystem: cargo              # go | npm | cargo | composer | maven
+    archive_name: "${PACKAGE}-${VERSION}-vendor.tar.xz"  # see note below
+    modules:                       # default: [{path: "."}] -- a single
+      - path: "."                  # module rooted at the checkout itself
+        name: null                  # explicit label (multi-module archives
+                                     # only; see combine.py for etcd's case)
+```
+
+`git`'s `archive_name` defaults to `${PACKAGE}-${VERSION}.tar.gz` if
+omitted. `vendor`'s default is **not** analogous -- `${PACKAGE}-vendor.tar.gz`,
+with no version and always gzip -- so a pipeline that wants a versioned
+and/or differently-compressed vendor archive (`.tar.bz2`/`.tar.xz`, both
+valid, see `gorget/util/archive.py`) must set `archive_name` explicitly.
+Nothing cross-checks either default or override against what the spec
+file's `Source0`/`SourceN` actually declare, or against `%prep`'s
+`%autosetup -n` (which must match the *archive's* internal top-level
+directory -- itself just `archive_name` minus its compression suffix, not
+the upstream repo's own directory name) -- a mismatch surfaces as a `%prep`
+failure several steps removed from the pipeline YAML that caused it.
+
+`vendor`'s `modules` lets one archive combine several submodules (e.g. an
+etcd-style repo with independent `server`/`etcdctl`/`etcdutl` Go modules) --
+each gets its own labeled top-level directory in the combined archive unless
+there's exactly one module with no explicit `name`, which instead produces a
+bare `vendor/` at the archive root.
+
+For Maven, gorget runs `mvn dependency:go-offline` with `vendor/` as the local
+repository and archives that repository. Maven bumps use
+`groupId:artifactId` coordinates. Direct declarations use the Maven Versions
+plugin; transitive dependencies get a `dependencyManagement` entry. As with
+other `vendor-bump` ecosystems, gorget repacks the source archive after the
+edit so its `pom.xml` matches the vendor repository.
+
+**`git` doesn't manage credentials.** It shells out to a plain `git
+clone`/`git checkout`, inheriting whatever ambient git configuration the
+process invoking gorget already has (a credential helper, an SSH agent, a
+`url.insteadOf` rewrite, `.netrc`) -- there's no gorget-level flag or config
+field for a token or key. A private `repo:` with no such ambient auth fails
+closed with git's own `fatal: could not read Username for '...': terminal
+prompts disabled`. See
+[Fetch from a private git repo](docs/how-to/fetch-from-a-private-repo.md).
 
 ### `transform:`
 
@@ -72,12 +137,13 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 | Step | Purpose |
 |---|---|
 | `strip-tarball` | Remove paths (glob patterns) from a fetched tarball and repack it |
-| `vendor-pin` | Bump a vendored dependency to a minimum version (Go/npm/Cargo) by editing its lockfile/manifest, before a later `vendor` step re-vendors |
-| `vendor` | Same step as `fetch:`'s `vendor` (reused) -- lets `vendor-pin` run before vendoring, since `fetch:` always runs before `transform:` |
+| `vendor-bump` | Bump a vendored dependency (direct **or** nested transitive) to a minimum or series-capped version (Go/npm/pnpm/yarn/Cargo/Maven), before a later `vendor` step re-vendors. Transitive deps are forced via the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm.overrides`, yarn `resolutions`, cargo `--precise`). Plain `version: "0.39.0"` means `>=0.39.0` (no upper bound); tilde `version: "~4.18.2"` means `>=4.18.2` capped to the `4.18.x` series |
+| `vendor` | Same step as `fetch:`'s `vendor` (reused) -- lets `vendor-bump` run before vendoring, since `fetch:` always runs before `transform:` |
 | `build-ui` | Run `npm`/`yarn run <script>` and archive the build output directory |
 | `run` | Escape hatch: an arbitrary command, with declared output paths archived as new artifacts afterward |
+| `pack` | Archive an explicit list of files already in `--package-dir` into a single deterministic tarball, each at its own relative path |
 
-`vendor-pin`/`vendor`/`build-ui`/`run` all operate against a shared working
+`vendor-bump`/`vendor`/`build-ui`/`run` all operate against a shared working
 source tree: a `git` fetch step's checkout if one ran, otherwise the sole
 fetched artifact gets extracted on first use (an error if there's more than
 one and no way to tell which to use) -- unless a `run:` step declares
@@ -179,9 +245,9 @@ suppressing the check.
 ### `policy:`
 
 Runs after `verify:`, before Emit. Validates the *final vendored output* --
-acts as a safety net for `vendor-pin` (confirms a pin actually took effect)
-and catches violations in packages that don't use `vendor-pin` at all. Unlike
-`vendor-pin` (a one-time edit), this re-runs on every pipeline execution, so a
+acts as a safety net for `vendor-bump` (confirms a pin actually took effect)
+and catches violations in packages that don't use `vendor-bump` at all. Unlike
+`vendor-bump` (a one-time edit), this re-runs on every pipeline execution, so a
 later upstream update silently reverting a security fix fails the build
 instead of shipping quietly.
 
@@ -189,11 +255,11 @@ instead of shipping quietly.
 policy:
   vendor-constraints:
     - package: sanitize-html
-      ecosystem: npm        # go | npm | cargo
+      ecosystem: npm        # go | npm | pnpm | yarn | cargo | maven
       version: "2.17.5"      # minimum version -- "at least this version"
       reason: "CVE-2024-XXXXX"
 
-  audit: true                # run go mod verify / npm audit / cargo audit
+  audit: true                # run Go/npm/Cargo/Maven ecosystem audits
                               # against every vendored module found
 
   license-compliance:
@@ -205,7 +271,7 @@ policy:
 | Check | Behavior |
 |---|---|
 | `vendor-constraints` | Resolves the actual vendored version (`go list -m`, `node_modules/<pkg>/package.json`, `Cargo.lock`) and compares against the declared minimum. Checks every vendored module for that ecosystem automatically -- no per-entry module path needed. Fails closed. |
-| `audit` | `go mod verify` checks module cache checksums against `go.sum` -- deterministic, no network, **fails closed**. `npm audit`/`cargo audit` query live vulnerability databases over the network -- non-deterministic (results can change with no code change), so findings are recorded in `report.json` but are **warn-only, never fail closed**. `cargo-audit` must be separately installed on `PATH`. |
+| `audit` | `go mod verify` checks module cache checksums against `go.sum` -- deterministic, no network, **fails closed**. `npm audit`, `cargo audit`, and Maven's OWASP dependency-check query live vulnerability databases over the network -- non-deterministic (results can change with no code change), so findings are recorded in `report.json` but are **warn-only, never fail closed**. `cargo-audit` must be separately installed on `PATH`. |
 | `license-compliance` | Flags a vendored dependency whose declared license is in `disallowed`. Supported for npm (`package.json`'s `license` field) and Cargo (`Cargo.toml`'s `license` field) only -- Go has no standard machine-readable per-module license field, so Go modules get a single "unsupported" warning instead of a fabricated check. |
 
 A package with none of the three configured gets a non-blocking "no policy
@@ -236,15 +302,58 @@ declares its `output_name` in `artifacts:`; each is copied into
 Skipped entirely under `--dry-run` (nothing should write to the real package
 directory during a dry run) and when no `post:` steps are declared.
 
+#### `bundled-provides` (built-in primitive)
+
+The canonical `post:` case -- generating an RPM `Provides: bundled(npm(...))`
+block for vendored JS dependencies -- is available as a built-in step, so no
+custom script is needed. It parses the lockfile(s) in the fetched source tree
+and writes one sorted `Provides:` line per dependency.
+
+```yaml
+post:
+  - type: bundled-provides
+    ecosystem: npm          # npm | pnpm | yarn
+    modules:
+      - path: "ui"          # defaults to [{ path: "." }]
+    scope: production       # "production" (default, drops devDependencies) | "all"
+    output: bundled-npm-provides.inc
+```
+
+It reads `package-lock.json` / `pnpm-lock.yaml` / `yarn.lock` from
+`<source>/<module.path>` -- the same checkout `vendor`/`vendor-bump` operate
+on, so the provides reflect any `vendor-bump` edits made earlier in the
+pipeline. Versions are normalised to RPM form (a semver pre-release
+`1.2.3-rc.1` becomes `1.2.3~rc.1`).
+
+The namespace is deliberately fixed to `bundled(npm(<name>))` for **every** JS
+ecosystem (npm/pnpm/yarn) and is not configurable. npm/pnpm/yarn all resolve
+against the npm registry, so the package name is the stable identifier
+regardless of which lockfile produced it. Unlike Go -- where
+`go-rpm-macros` auto-generates `bundled(golang(...))` at build time from
+`vendor/modules.txt` -- Fedora has no build-time generator for bundled npm
+provides and no single blessed string, so gorget standardises on one form
+(matching the Bundled Software Policy's `bundled(<system>(<name>))` shape).
+Every gorget-packaged JS app emits the same namespace, keeping the block
+greppable and consistent across packages.
+
+The file is written into `--package-dir`; pull it into the spec with:
+
+```spec
+%include %{SOURCEN}    # e.g. %include %{S:9}, matching its SourceN: entry
+```
+
+Requires a preceding `git` fetch step to establish the source checkout; it
+fails closed otherwise.
+
 ### `toolchain:`
 
 ```yaml
 toolchain:
-  - name: go        # one of: go, node, npm, cargo, rustc, python
+  - name: go        # one of: go, node, npm, cargo, rustc, python, maven
     version: 1.22.0
 ```
 
-Declares per-package tool version requirements for `vendor`/`vendor-pin`/
+Declares per-package tool version requirements for `vendor`/`vendor-bump`/
 `build-ui`/`run` steps. **This currently only validates -- it never fetches
 or switches versions.** Before any stage runs (even under `--dry-run`),
 gorget checks the declared version against whatever's already installed

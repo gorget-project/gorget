@@ -3,7 +3,7 @@ import subprocess
 import pytest
 
 from gorget.config.schema import ToolchainEntry
-from gorget.exceptions import GorgetTransientError
+from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.fetch.vendor.go import GoVendor
 
 _OFF = {"GOWORK": "off"}
@@ -216,3 +216,128 @@ class TestGoVendorToolsConfig:
         )
         with pytest.raises(GorgetTransientError, match="no such file"):
             GoVendor().vendor(tmp_path, package_dir=package_dir)
+
+
+class TestGomodPatchSync:
+    """Regression coverage for the bug that broke trivy: go-vendor-tools.toml's
+    pre_commands/dependency_overrides mutate go.mod/go.sum only in this vendor
+    checkout, since gorget's `fetch: {git}` step already archived Source0 from
+    the checkout before `vendor:` ran. Without a spec patch replicating the same
+    change, the plain source tree and the vendor archive can require different
+    versions of the same dependency -- `go build -mod=vendor` then rejects it as
+    inconsistent vendoring. See GoVendor._validate_gomod_patch_sync's docstring.
+    """
+
+    def _spec_with_patch(self, package_dir, patch_touches_gomod):
+        (package_dir / "pkg.spec").write_text("Patch0: 0001-fix.patch\n")
+        target = "go.mod" if patch_touches_gomod else "main.go"
+        (package_dir / "0001-fix.patch").write_text(
+            f"--- a/{target}\n+++ b/{target}\n@@ -1 +1 @@\n-old\n+new\n"
+        )
+
+    def test_go_get_precommand_with_matching_patch_is_allowed(self, tmp_path, mocker):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "go-vendor-tools.toml").write_text(
+            '[archive]\npre_commands = [["go", "get", "golang.org/x/text@v0.39.0"]]\n'
+        )
+        self._spec_with_patch(package_dir, patch_touches_gomod=True)
+        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        GoVendor().vendor(tmp_path, package_dir=package_dir)
+        assert mock_run.call_args_list[0] == mocker.call(
+            ["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path, env=_OFF
+        )
+
+    def test_go_get_precommand_without_matching_patch_raises(self, tmp_path, mocker):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "go-vendor-tools.toml").write_text(
+            '[archive]\npre_commands = [["go", "get", "golang.org/x/text@v0.39.0"]]\n'
+        )
+        self._spec_with_patch(package_dir, patch_touches_gomod=False)
+        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        with pytest.raises(GorgetConfigError, match="pre_commands or dependency_overrides"):
+            GoVendor().vendor(tmp_path, package_dir=package_dir)
+        mock_run.assert_not_called()
+
+    def test_dependency_override_without_matching_patch_raises(self, tmp_path, mocker):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "go-vendor-tools.toml").write_text(
+            '[archive.dependency_overrides]\n"golang.org/x/text" = "v0.39.0"\n'
+        )
+        self._spec_with_patch(package_dir, patch_touches_gomod=False)
+        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        with pytest.raises(GorgetConfigError, match="pre_commands or dependency_overrides"):
+            GoVendor().vendor(tmp_path, package_dir=package_dir)
+        mock_run.assert_not_called()
+
+    def test_precommand_not_touching_gomod_is_allowed_without_a_patch(self, tmp_path, mocker):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "go-vendor-tools.toml").write_text(
+            '[archive]\npre_commands = [["echo", "prep"]]\n'
+        )
+        (package_dir / "pkg.spec").write_text("Name: pkg\n")
+        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        GoVendor().vendor(tmp_path, package_dir=package_dir)
+        assert mock_run.call_args_list[0] == mocker.call(["echo", "prep"], cwd=tmp_path, env=_OFF)
+
+    def test_missing_spec_skips_validation_instead_of_crashing(self, tmp_path, mocker):
+        # A malformed package layout (no spec, or more than one) isn't this
+        # check's problem to report -- whatever reads the spec next will fail
+        # with a clearer, more specific error.
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "go-vendor-tools.toml").write_text(
+            '[archive]\npre_commands = [["go", "get", "golang.org/x/text@v0.39.0"]]\n'
+        )
+        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        GoVendor().vendor(tmp_path, package_dir=package_dir)
+        assert mock_run.call_args_list[0] == mocker.call(
+            ["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path, env=_OFF
+        )
+
+
+class TestArchiveRootFiles:
+    """Regression coverage for a real gap found migrating grafana13.1: a
+    vendor archive containing only "vendor/" gets mis-extracted by
+    `go_vendor_license --use-archive` (it has a single common top-level
+    directory, so the tool treats it as an independently-wrapped sibling
+    archive instead of nesting it inside the source tree) -- which made
+    every one of go-vendor-tools.toml's correctly-pinned license file
+    checksums come up as unexpectedly "changed" in %check, even though the
+    vendor content itself was byte-identical to what the pinned hashes
+    expected. See GoVendor.archive_root_files's docstring for the full
+    mechanism.
+    """
+
+    def test_returns_go_mod_and_go_sum_for_a_plain_module(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/x")
+        (tmp_path / "go.sum").write_text("checksums")
+        assert set(GoVendor().archive_root_files(tmp_path)) == {
+            tmp_path / "go.mod",
+            tmp_path / "go.sum",
+        }
+
+    def test_omits_go_sum_when_absent(self, tmp_path):
+        # A module with zero external dependencies has no go.sum at all --
+        # existence, not a hardcoded required/optional split, decides
+        # inclusion (matches go-vendor-tools' own OPTIONAL_FILES treatment).
+        (tmp_path / "go.mod").write_text("module example.com/x")
+        assert GoVendor().archive_root_files(tmp_path) == [tmp_path / "go.mod"]
+
+    def test_includes_go_work_files_for_a_workspace(self, tmp_path):
+        (tmp_path / "go.work").write_text("go 1.22\n")
+        (tmp_path / "go.work.sum").write_text("checksums")
+        (tmp_path / "go.mod").write_text("module example.com/x")
+        (tmp_path / "go.sum").write_text("checksums")
+        assert set(GoVendor().archive_root_files(tmp_path)) == {
+            tmp_path / "go.work",
+            tmp_path / "go.work.sum",
+            tmp_path / "go.mod",
+            tmp_path / "go.sum",
+        }
+
+    def test_returns_empty_list_when_nothing_exists(self, tmp_path):
+        assert GoVendor().archive_root_files(tmp_path) == []

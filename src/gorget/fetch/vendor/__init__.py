@@ -1,5 +1,4 @@
-"""`vendor` step: generate dependency vendor archives for Go, npm, Cargo, and
-Composer ecosystems, combining multiple submodules (e.g. etcd) into one archive.
+"""Generate dependency vendor archives for supported ecosystems.
 
 Reused by both the Fetch stage's `vendor` step and the Transform stage's `vendor`
 step (see `fetch/vendor/base.py`'s `VendorRunContext` for why this isn't typed
@@ -16,14 +15,20 @@ from gorget.fetch.vendor.cargo import CargoVendor
 from gorget.fetch.vendor.combine import combine_vendor_archives
 from gorget.fetch.vendor.composer import ComposerVendor
 from gorget.fetch.vendor.go import GoVendor
+from gorget.fetch.vendor.maven import MavenVendor
 from gorget.fetch.vendor.npm import NpmVendor
+from gorget.fetch.vendor.pnpm import PnpmVendor
+from gorget.fetch.vendor.yarn import YarnVendor
 from gorget.util.git import commit_timestamp
 
 _ECOSYSTEMS: dict[str, VendorEcosystem] = {
     "go": GoVendor(),
     "npm": NpmVendor(),
+    "pnpm": PnpmVendor(),
+    "yarn": YarnVendor(),
     "cargo": CargoVendor(),
     "composer": ComposerVendor(),
+    "maven": MavenVendor(),
 }
 
 
@@ -47,11 +52,23 @@ class VendorHandler:
                         ctx.toolchain,
                         ctx.package_dir,
                         module.use_workspace,
+                        step.platforms or (),
                     ),
                 )
                 for module in step.modules
             ]
             mtime = commit_timestamp(ctx.source_dir)
-            combine_vendor_archives(module_outputs, archive_path, mtime=mtime)
+            # Only the single-unnamed-module ("bare vendor/") case needs
+            # root_files -- combine_vendor_archives ignores them otherwise
+            # anyway, but there's nothing to gain from an archive_root_files
+            # filesystem check that's guaranteed to be discarded.
+            root_files = (
+                ecosystem.archive_root_files(module_outputs[0][1].parent)
+                if len(module_outputs) == 1 and module_outputs[0][0].name is None
+                else None
+            )
+            combine_vendor_archives(
+                module_outputs, archive_path, mtime=mtime, root_files=root_files
+            )
 
         return [build_artifact(archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run)]

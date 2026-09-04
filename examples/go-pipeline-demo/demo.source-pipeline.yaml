@@ -6,21 +6,21 @@ fetch:
 transform:
   # Remove docs/ from the source tarball before it's emitted. Note this only
   # affects the *archived copy* -- it doesn't touch the live checkout that
-  # vendor-pin/vendor/build-ui/run operate against below.
+  # vendor-bump/vendor/build-ui/run operate against below.
   - type: strip-tarball
     paths:
       - "*/docs"
 
-  - type: vendor-pin
+  - type: vendor-bump
     ecosystem: go
     pins:
-      # Go module versions need the "v" prefix -- unlike npm/cargo, which
-      # don't use one. Whatever minimum-version you write is passed through
-      # to `go mod edit -require=<dependency>@<minimum-version>` verbatim.
+      # Plain version means ">=" (minimum). Tilde prefix (e.g. "~1.5")
+      # pins to that prefix (latest 1.5.x). Go module versions need the
+      # "v" prefix -- unlike npm/cargo, which don't use one.
       - dependency: "rsc.io/quote"
-        minimum-version: "v1.5.2"
+        version: "v1.5.2"
 
-  # Re-vendor now that vendor-pin has bumped the dependency -- vendor is a
+  # Re-vendor now that vendor-bump has bumped the dependency -- vendor is a
   # legal step under both fetch: and transform:, reused unchanged either way.
   - type: vendor
     ecosystem: go
@@ -37,6 +37,15 @@ transform:
     command: ["sh", "-c", "go version > go-version.txt"]
     outputs:
       - go-version.txt
+
+  # Packs a file already sitting in --package-dir (this directory) verbatim
+  # -- unlike everything above, which operates against demo-repo/'s fetched
+  # checkout. Built with Python's own tarfile/gzip rather than the system
+  # tar/gzip binaries, so it's byte-identical regardless of which
+  # environment runs it.
+  - type: pack
+    files: ["setup-demo-repo.sh"]
+    output: "demo-packaging-scripts.tar.gz"
 
 # toolchain: only *validates* against whatever's already installed -- it
 # never fetches or switches versions (see gorget/toolchain.py). Uncomment

@@ -28,3 +28,9 @@ def test_composer_vendor_raises_on_failure(tmp_path, mocker):
     )
     with pytest.raises(GorgetTransientError, match="composer.json not found"):
         ComposerVendor().vendor(tmp_path)
+
+
+def test_composer_vendor_has_no_archive_root_files(tmp_path):
+    # No known equivalent to go-vendor-tools' archive-layout requirement
+    # (see GoVendor.archive_root_files) for this ecosystem.
+    assert ComposerVendor().archive_root_files(tmp_path) == []

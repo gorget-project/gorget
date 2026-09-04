@@ -48,6 +48,11 @@ class GitStep:
     repo: str
     ref: str
     shallow: bool = True
+    # Recursively init submodules after checkout. "none" skips them, "shallow"
+    # clones each submodule at --depth 1 (no history), "full" clones full
+    # submodule history. Independent of `shallow`, which controls the parent
+    # clone.
+    submodules: Literal["none", "shallow", "full"] = "none"
     archive_name: str | None = None
     subdir: str | None = None
 
@@ -64,11 +69,25 @@ class VendorModule:
 
 
 @dataclass(frozen=True, kw_only=True)
+class VendorPlatform:
+    cpu: str    # "x64", "arm64"
+    os: str     # "linux"
+    libc: str   # "glibc"
+
+
+_DEFAULT_NPM_PLATFORMS: list[VendorPlatform] = [
+    VendorPlatform(cpu="x64", os="linux", libc="glibc"),
+    VendorPlatform(cpu="arm64", os="linux", libc="glibc"),
+]
+
+
+@dataclass(frozen=True, kw_only=True)
 class VendorStep:
     type: Literal["vendor"] = "vendor"
-    ecosystem: Literal["go", "npm", "cargo", "composer"]
+    ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo", "composer", "maven"]
     archive_name: str | None = None
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
+    platforms: list[VendorPlatform] | None = None
 
 
 FetchStep = SpecUpdateStep | SpecSourceStep | UrlStep | GitStep | VendorStep
@@ -97,16 +116,31 @@ class StripTarballStep:
 
 
 @dataclass(frozen=True, kw_only=True)
-class VendorPinEntry:
-    dependency: str
-    minimum_version: str
+class PackStep:
+    type: Literal["pack"] = "pack"
+    # Paths relative to --package-dir, included in the archive verbatim at
+    # their own relative path (no injected wrapper directory) -- for
+    # packaging a handful of files already checked into the package's own
+    # directory (e.g. helper scripts) into a single deterministic archive,
+    # without depending on the host's tar/gzip binary version: gzip's
+    # compressed output isn't uniquely determined by its input, so two
+    # different tar/gzip builds can compress byte-identical content into
+    # different bytes.
+    files: list[str]
+    output: str
 
 
 @dataclass(frozen=True, kw_only=True)
-class VendorPinStep:
-    type: Literal["vendor-pin"] = "vendor-pin"
-    ecosystem: Literal["go", "npm", "cargo"]
-    pins: list[VendorPinEntry] = field(default_factory=list)
+class VendorBumpEntry:
+    dependency: str
+    version: str    # "0.39.0" = minimum (>=), "~4.18" = prefix pin
+
+
+@dataclass(frozen=True, kw_only=True)
+class VendorBumpStep:
+    type: Literal["vendor-bump"] = "vendor-bump"
+    ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo", "maven"]
+    pins: list[VendorBumpEntry] = field(default_factory=list)
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
 
 
@@ -149,16 +183,17 @@ class RunStep:
 
 
 # `vendor` is reused verbatim from the fetch schema: a `transform:` list can run
-# `vendor-pin` then `vendor` in order (edit lockfiles, then vendor) since Fetch's
+# `vendor-bump` then `vendor` in order (edit lockfiles, then vendor) since Fetch's
 # own `vendor` step always runs before Transform and can't do that ordering itself.
-TransformStep = StripTarballStep | VendorPinStep | BuildUiStep | RunStep | VendorStep
+TransformStep = StripTarballStep | VendorBumpStep | BuildUiStep | RunStep | VendorStep | PackStep
 
 TRANSFORM_STEP_TYPES: dict[str, type] = {
     "strip-tarball": StripTarballStep,
-    "vendor-pin": VendorPinStep,
+    "vendor-bump": VendorBumpStep,
     "build-ui": BuildUiStep,
     "run": RunStep,
     "vendor": VendorStep,
+    "pack": PackStep,
 }
 
 
@@ -218,8 +253,8 @@ class AcceptedChecksumsSection:
 @dataclass(frozen=True, kw_only=True)
 class VendorConstraintEntry:
     package: str
-    ecosystem: Literal["go", "npm", "cargo"]
-    # Minimum version -- "at least this version," same semantics as vendor-pin.
+    ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo", "maven"]
+    # Minimum version -- "at least this version," same semantics as vendor-bump.
     version: str
     reason: str
 
@@ -255,14 +290,31 @@ class PostRunStep:
     artifacts: list[str] = field(default_factory=list)
 
 
-# Room for a future ecosystem-aware step (e.g. `bundled-provides`, sketched in
-# the design doc) that extracts dependency versions from a vendor manifest and
-# splices them into the spec between markers -- `run` alone already covers
-# every real case migrated so far.
-PostStep = PostRunStep
+@dataclass(frozen=True, kw_only=True)
+class BundledProvidesStep:
+    """Generate an RPM `Provides: bundled(npm(...))` block from lockfiles.
+
+    Self-contained like the `vendor` step: it declares its own `ecosystem` and
+    `modules` and parses the lockfiles under `source_dir/<module.path>` itself
+    (no cross-step wiring). Writes one sorted `Provides:` line per bundled
+    dependency to `output` in `--package-dir`, for the spec to pull in with
+    `%include %{S:N}`.
+    """
+
+    type: Literal["bundled-provides"] = "bundled-provides"
+    ecosystem: Literal["npm", "pnpm", "yarn"]
+    modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
+    # "production" drops devDependencies (the usual RPM case -- dev tooling
+    # isn't shipped); "all" includes them.
+    scope: Literal["production", "all"] = "production"
+    output: str = "bundled-npm-provides.inc"
+
+
+PostStep = PostRunStep | BundledProvidesStep
 
 POST_STEP_TYPES: dict[str, type] = {
     "run": PostRunStep,
+    "bundled-provides": BundledProvidesStep,
 }
 
 

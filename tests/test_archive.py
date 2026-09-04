@@ -2,7 +2,13 @@ import os
 import shutil
 import tarfile
 
-from gorget.util.archive import compression_kind, extract_tar_gz, make_tar_gz, repack_tar_gz
+from gorget.util.archive import (
+    compression_kind,
+    extract_tar_gz,
+    make_tar_gz,
+    pack_files,
+    repack_tar_gz,
+)
 
 
 def test_make_tar_gz_includes_files_under_arcname(tmp_path):
@@ -52,6 +58,28 @@ def test_make_tar_gz_mtime_stamps_every_member(tmp_path):
     with tarfile.open(dest) as tar:
         mtimes = {member.mtime for member in tar.getmembers()}
     assert mtimes == {42}
+
+
+def test_make_tar_gz_normalizes_owner_fields(tmp_path):
+    """Regression test: `tarfile.add()` populates uid/gid/uname/gname from the
+    local filesystem's owner and passwd/group lookups by default, so the same
+    content built under two different users (or CI service accounts with
+    different names) would otherwise emit different header bytes even with
+    mtime already pinned.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("hello")
+
+    dest = tmp_path / "archive.tar.gz"
+    make_tar_gz(src, dest, arcname="pkg", mtime=42)
+
+    with tarfile.open(dest) as tar:
+        for member in tar.getmembers():
+            assert member.uid == 0
+            assert member.gid == 0
+            assert member.uname == ""
+            assert member.gname == ""
 
 
 def test_make_tar_gz_gzip_header_timestamp_is_pinned(tmp_path):
@@ -200,3 +228,64 @@ def test_make_tar_xz_is_byte_identical_across_runs_with_different_source_mtimes(
     first = build(0, "first.tar.xz")
     second = build(3600, "second.tar.xz")
     assert first == second
+
+
+def test_pack_files_preserves_each_files_own_relative_path(tmp_path):
+    top = tmp_path / "pkg"
+    (top / "sub").mkdir(parents=True)
+    (top / "a.txt").write_text("hello")
+    (top / "sub" / "b.txt").write_text("world")
+
+    dest = tmp_path / "out" / "archive.tar.gz"
+    pack_files([(top / "a.txt", "a.txt"), (top / "sub" / "b.txt", "sub/b.txt")], dest)
+
+    with tarfile.open(dest) as tar:
+        names = set(tar.getnames())
+    # No injected wrapper directory (unlike make_tar_gz's arcname) -- each
+    # file lands exactly at the arcname given.
+    assert names == {"a.txt", "sub/b.txt"}
+
+
+def test_pack_files_normalizes_mtime_and_owner_fields(tmp_path):
+    top = tmp_path / "pkg"
+    top.mkdir()
+    (top / "a.txt").write_text("hello")
+    os.utime(top / "a.txt", (12345, 12345))
+
+    dest = tmp_path / "archive.tar.gz"
+    pack_files([(top / "a.txt", "a.txt")], dest)
+
+    with tarfile.open(dest) as tar:
+        (member,) = tar.getmembers()
+    assert member.mtime == 0
+    assert member.uid == 0
+    assert member.gid == 0
+    assert member.uname == ""
+    assert member.gname == ""
+
+
+def test_pack_files_is_deterministic_regardless_of_source_mtime(tmp_path):
+    def build(offset, dest_name):
+        top = tmp_path / f"pkg-{offset}"
+        top.mkdir()
+        (top / "a.txt").write_text("hello")
+        os.utime(top / "a.txt", (1000 + offset, 1000 + offset))
+        dest = tmp_path / dest_name
+        pack_files([(top / "a.txt", "a.txt")], dest)
+        return dest.read_bytes()
+
+    first = build(0, "first.tar.gz")
+    second = build(3600, "second.tar.gz")
+    assert first == second
+
+
+def test_pack_files_respects_dest_compression_suffix(tmp_path):
+    top = tmp_path / "pkg"
+    top.mkdir()
+    (top / "a.txt").write_text("hello")
+
+    dest = tmp_path / "archive.tar.xz"
+    pack_files([(top / "a.txt", "a.txt")], dest)
+
+    with tarfile.open(dest) as tar:
+        assert tar.getnames() == ["a.txt"]

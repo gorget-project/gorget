@@ -72,12 +72,24 @@ def _exclude_git(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
     return tarinfo
 
 
-def _normalize_mtime(mtime: int):
+def _normalize_member(mtime: int):
+    """Strip everything about a tar member that varies with *who's building
+    it* rather than its actual content: `tarfile.add()` populates `uid`/`gid`/
+    `uname`/`gname` from the local filesystem's owner and passwd/group
+    lookups by default, so the same content built under two different users
+    (or CI service accounts with different names) would otherwise emit
+    different header bytes even with mtime already pinned.
+    """
+
     def _filter(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
         filtered = _exclude_git(tarinfo)
         if filtered is None:
             return None
         filtered.mtime = mtime
+        filtered.uid = 0
+        filtered.gid = 0
+        filtered.uname = ""
+        filtered.gname = ""
         return filtered
 
     return _filter
@@ -96,7 +108,7 @@ def make_tar_gz(src_dir: Path, dest: Path, arcname: str, *, mtime: int | None = 
     """
     kind = compression_kind(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    filter_fn = _normalize_mtime(mtime) if mtime is not None else _exclude_git
+    filter_fn = _normalize_member(mtime) if mtime is not None else _exclude_git
     if kind == "gz":
         with open_gzip_tar(dest) as tar:
             tar.add(src_dir, arcname=arcname, filter=filter_fn)
@@ -143,7 +155,7 @@ def repack_tar_gz(src_dir: Path, dest: Path) -> None:
     """
     kind = compression_kind(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    filter_fn = _normalize_mtime(_reference_mtime(src_dir))
+    filter_fn = _normalize_member(_reference_mtime(src_dir))
     if kind == "gz":
         with open_gzip_tar(dest) as tar:
             for entry in sorted(src_dir.iterdir()):
@@ -156,3 +168,33 @@ def repack_tar_gz(src_dir: Path, dest: Path) -> None:
         with tarfile.open(dest, "w:xz") as tar:
             for entry in sorted(src_dir.iterdir()):
                 tar.add(entry, arcname=entry.name, filter=filter_fn)
+
+
+def pack_files(files: list[tuple[Path, str]], dest: Path) -> None:
+    """Tar up an explicit list of `(source_path, arcname)` pairs into `dest`,
+    each at its own given arcname -- no wrapper directory injected like
+    `make_tar_gz`, and no whole-directory walk like `repack_tar_gz`. Used for
+    archives assembled from a handful of individually-named files rather than
+    an entire checkout.
+
+    The archive's compression is derived from `dest`'s extension, same as
+    `make_tar_gz`/`repack_tar_gz`. Every member is stamped with a fixed
+    mtime/uid/gid/uname/gname (epoch 0, root, no name) so the same input
+    files always produce byte-identical output, regardless of which system
+    or user built them.
+    """
+    kind = compression_kind(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    filter_fn = _normalize_member(0)
+    if kind == "gz":
+        with open_gzip_tar(dest) as tar:
+            for src, arcname in files:
+                tar.add(src, arcname=arcname, filter=filter_fn)
+    elif kind == "bz2":
+        with tarfile.open(dest, "w:bz2") as tar:
+            for src, arcname in files:
+                tar.add(src, arcname=arcname, filter=filter_fn)
+    else:
+        with tarfile.open(dest, "w:xz") as tar:
+            for src, arcname in files:
+                tar.add(src, arcname=arcname, filter=filter_fn)
