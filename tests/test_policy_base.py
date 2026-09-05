@@ -1,54 +1,37 @@
 from pathlib import Path
 
-from gorget.config.schema import (
-    PipelineSpec,
-    TransformSection,
-    UrlStep,
-    VendorModule,
-    VendorStep,
-)
-from gorget.policy.base import VendoredModule, discover_vendored_modules
+from gorget.config.schema import VendorModule, VendorStep
+from gorget.fetch.vendor.base import VendoredModule, resolve_vendored_modules
 
 
-def test_discover_vendored_modules_from_fetch():
-    spec = PipelineSpec(
-        fetch=[UrlStep(url="https://example.com/x.tar.gz"), VendorStep(ecosystem="go")]
+def test_resolve_default_vendored_module():
+    modules = resolve_vendored_modules(VendorStep(ecosystem="go"), Path("/workspace"))
+    assert modules == (
+        VendoredModule(ecosystem="go", path=Path("/workspace")),
     )
-    modules = discover_vendored_modules(spec, Path("/src"))
-    assert modules == [VendoredModule(ecosystem="go", path=Path("/src/."))]
 
 
-def test_discover_vendored_modules_from_transform():
+def test_resolve_named_vendored_module():
     vendor_step = VendorStep(ecosystem="npm", modules=[VendorModule(path="ui")])
-    spec = PipelineSpec(transform=TransformSection(steps=[vendor_step]))
-    modules = discover_vendored_modules(spec, Path("/src"))
+    modules = resolve_vendored_modules(vendor_step, Path("/workspace"))
     assert len(modules) == 1
     assert modules[0].ecosystem == "npm"
-    assert modules[0].path == Path("/src/ui")
+    assert modules[0].path == Path("/workspace/ui")
 
 
-def test_discover_vendored_modules_multi_submodule():
-    spec = PipelineSpec(
-        fetch=[
-            VendorStep(
-                ecosystem="go",
-                modules=[
-                    VendorModule(path="server"),
-                    VendorModule(path="etcdctl"),
-                    VendorModule(path="etcdutl"),
-                ],
-            )
-        ]
+def test_resolve_multiple_vendored_modules():
+    step = VendorStep(
+        ecosystem="go",
+        modules=[
+            VendorModule(path="server"),
+            VendorModule(path="etcdctl"),
+            VendorModule(path="etcdutl"),
+        ],
     )
-    modules = discover_vendored_modules(spec, Path("/src"))
+    modules = resolve_vendored_modules(step, Path("/workspace"))
     assert [m.path for m in modules] == [
-        Path("/src/server"),
-        Path("/src/etcdctl"),
-        Path("/src/etcdutl"),
+        Path("/workspace/server"),
+        Path("/workspace/etcdctl"),
+        Path("/workspace/etcdutl"),
     ]
     assert all(m.ecosystem == "go" for m in modules)
-
-
-def test_discover_vendored_modules_none_when_no_vendor_step():
-    spec = PipelineSpec(fetch=[UrlStep(url="https://example.com/x.tar.gz")])
-    assert discover_vendored_modules(spec, Path("/src")) == []

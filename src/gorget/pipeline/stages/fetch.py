@@ -26,9 +26,9 @@ from gorget.fetch.spec_source import SpecSourceHandler
 from gorget.fetch.spec_update import SpecUpdateHandler
 from gorget.fetch.url import UrlHandler
 from gorget.fetch.vendor import VendorHandler
+from gorget.fetch.vendor.base import VendorResult
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
-from gorget.policy.base import resolve_vendored_modules
 
 # Each concrete handler's `run()` is typed against its own specific step
 # dataclass (e.g. `SpecUpdateStep`), which is the precise type for its
@@ -69,13 +69,16 @@ class FetchStage:
             handler = _HANDLERS[type(step)]
             logger.debug("fetch step: %s", step)
             source_dir_before = fetch_ctx.source_dir
-            artifacts = handler.run(step, fetch_ctx)
+            vendor_result: VendorResult | None = None
+            if isinstance(step, VendorStep):
+                vendor_result = handler.run(step, fetch_ctx)
+                artifacts = list(vendor_result.artifacts)
+            else:
+                artifacts = handler.run(step, fetch_ctx)
             logger.debug("fetch step produced: %s", [a.output_name for a in artifacts])
             state.artifacts.extend(artifacts)
-            if isinstance(step, VendorStep) and fetch_ctx.source_dir is not None:
-                state.vendored_modules.extend(
-                    resolve_vendored_modules(step, fetch_ctx.source_dir)
-                )
+            if vendor_result is not None:
+                state.vendored_modules.extend(vendor_result.modules)
             # The step that first sets source_dir is the `git` clone; its sole
             # artifact is the source tarball backing that checkout. Record it so
             # a later transform step editing the checkout can repack it.

@@ -169,6 +169,27 @@ def test_license_compliance_failure_raises(tmp_path):
         PolicyStage().run(ctx, spec, state)
 
 
+def test_policy_uses_recorded_vendor_workspace_instead_of_source(tmp_path):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    vendor_workspace = tmp_path / "vendor-workspace"
+    write_npm_package(vendor_workspace, "bad-pkg", "GPL-3.0-only")
+    ctx = make_ctx(tmp_path)
+    state = make_state(tmp_path, source_dir=source_dir)
+    state.vendored_modules.append(
+        VendoredModule(ecosystem="npm", path=vendor_workspace)
+    )
+    spec = PipelineSpec(
+        fetch=[VendorStep(ecosystem="npm")],
+        policy=PolicySection(
+            license_compliance=LicenseComplianceSection(disallowed=["GPL-3.0-only"])
+        ),
+    )
+
+    with pytest.raises(GorgetPolicyViolation, match="bad-pkg"):
+        PolicyStage().run(ctx, spec, state)
+
+
 def test_multiple_failures_are_all_reported_together(tmp_path):
     write_npm_package(tmp_path, "sanitize-html", "MIT", version="2.16.0")
     write_npm_package(tmp_path, "bad-pkg", "GPL-3.0-only")

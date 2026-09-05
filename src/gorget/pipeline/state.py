@@ -7,8 +7,8 @@ from pathlib import Path
 
 from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchedArtifact
+from gorget.fetch.vendor.base import VendoredModule
 from gorget.pipeline.result import PipelineReport
-from gorget.policy.base import VendoredModule
 from gorget.specfile import SpecFile
 
 

@@ -67,6 +67,10 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `git` | Clone a repo at a tag/branch/commit (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
 | `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm) |
 
+`vendor` runs package managers in a disposable copy of the source tree. Dependency
+trees, caches, and other package-manager changes cannot enter a later Source0 repack.
+The `sync-go-modules` option copies only Go module metadata back to the shared source.
+
 `git` (or another real fetch step) is mandatory for a **native package** (no
 Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
 there's no bare-`spec-source` fallback the way an already-Fedora-derived

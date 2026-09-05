@@ -89,13 +89,17 @@ def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mo
 
     # `go mod tidy` runs before `go mod vendor` by default (matching
     # go-vendor-tools' own default), even with no go-vendor-tools.toml present.
+    vendor_module_dir = state.vendored_modules[0].path
     assert mock_go_run.call_args_list == [
-        mocker.call(["go", "mod", "tidy"], cwd=state.source_dir, env={"GOWORK": "off"}),
-        mocker.call(["go", "mod", "vendor"], cwd=state.source_dir, env={"GOWORK": "off"}),
+        mocker.call(["go", "mod", "tidy"], cwd=vendor_module_dir, env={"GOWORK": "off"}),
+        mocker.call(
+            ["go", "mod", "vendor"], cwd=vendor_module_dir, env={"GOWORK": "off"}
+        ),
     ]
     assert [(module.ecosystem, module.path) for module in state.vendored_modules] == [
-        ("go", state.source_dir)
+        ("go", vendor_module_dir)
     ]
+    assert vendor_module_dir != state.source_dir
 
 
 def test_fetch_stage_rejects_sync_go_modules(tmp_path):
