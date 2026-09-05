@@ -11,8 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from gorget.config.schema import VendorStep
-
 
 @dataclass(frozen=True, kw_only=True)
 class CheckResult:
@@ -34,11 +32,3 @@ class CheckResult:
 class VendoredModule:
     ecosystem: str
     path: Path
-
-
-def resolve_vendored_modules(step: VendorStep, source_dir: Path) -> list[VendoredModule]:
-    """Resolve one vendor step's modules against the workspace it used."""
-    return [
-        VendoredModule(ecosystem=step.ecosystem, path=source_dir / module.path)
-        for module in step.modules
-    ]

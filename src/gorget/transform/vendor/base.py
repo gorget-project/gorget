@@ -3,11 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from gorget.config.schema import ToolchainEntry, VendorPlatform
+from gorget.config.schema import ToolchainEntry, VendorPlatform, VendorStep
 from gorget.config.substitution import SubstitutionVars
+from gorget.pipeline.artifact import Artifact
+from gorget.policy.base import VendoredModule
+
+
+@dataclass(frozen=True, kw_only=True)
+class VendorResult:
+    artifacts: tuple[Artifact, ...]
+    modules: tuple[VendoredModule, ...]
+
+
+def resolve_vendored_modules(
+    step: VendorStep, source_dir: Path
+) -> tuple[VendoredModule, ...]:
+    """Resolve one vendor step's modules against the workspace it used."""
+    return tuple(
+        VendoredModule(ecosystem=step.ecosystem, path=source_dir / module.path)
+        for module in step.modules
+    )
 
 
 class VendorRunContext(Protocol):
