@@ -179,13 +179,24 @@ def pack_files(files: list[tuple[Path, str]], dest: Path) -> None:
 
     The archive's compression is derived from `dest`'s extension, same as
     `make_tar_gz`/`repack_tar_gz`. Every member is stamped with a fixed
-    mtime/uid/gid/uname/gname (epoch 0, root, no name) so the same input
-    files always produce byte-identical output, regardless of which system
-    or user built them.
+    mtime/uid/gid/uname/gname (epoch 0, root, no name).  Git only records
+    whether a regular file is executable; a checkout's umask can otherwise
+    make the same Git blob mode 0644 or 0666 (and 0755 or 0777).  Canonical
+    modes therefore make the output independent of the checkout environment.
     """
     kind = compression_kind(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    filter_fn = _normalize_member(0)
+    normalize_member = _normalize_member(0)
+
+    def filter_fn(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        normalized = normalize_member(tarinfo)
+        if normalized is None:
+            return None
+        if normalized.isdir():
+            normalized.mode = 0o755
+        elif normalized.isreg():
+            normalized.mode = 0o755 if normalized.mode & 0o111 else 0o644
+        return normalized
     if kind == "gz":
         with open_gzip_tar(dest) as tar:
             for src, arcname in files:
