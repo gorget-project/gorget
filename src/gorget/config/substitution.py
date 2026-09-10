@@ -1,6 +1,6 @@
 """Variable substitution: ${VERSION}, ${VERSION_MAJOR}, ${VERSION_MINOR},
-${VERSION_PATCH}, ${OLD_VERSION}, ${PACKAGE}, ${SPEC_FILE}, ${PACKAGE_DIR},
-${UPSTREAM_REPO}.
+${VERSION_PATCH}, ${VERSION_BUILD}, ${OLD_VERSION}, ${PACKAGE}, ${SPEC_FILE},
+${PACKAGE_DIR}, ${UPSTREAM_REPO}.
 
 Substitution runs once, on the raw dict/list/string tree produced by the YAML
 loader, before it's turned into `PipelineSpec` dataclasses -- so the schema module
@@ -42,12 +42,24 @@ class SubstitutionVars:
     def version_patch(self) -> str:
         return self._part(2)
 
+    @property
+    def version_build(self) -> str:
+        """Return the fifth dot-separated version component, if present.
+
+        OpenJDK versions encode their build number as the fifth component,
+        for example ``17.0.21.0.6``.  Keeping this separate from the patch
+        component lets source pipelines construct upstream tag names such as
+        ``jdk-17.0.21+6`` without shell parsing in schema fields.
+        """
+        return self._part(4)
+
     def as_mapping(self) -> dict[str, str]:
         return {
             "VERSION": self.version,
             "VERSION_MAJOR": self.version_major,
             "VERSION_MINOR": self.version_minor,
             "VERSION_PATCH": self.version_patch,
+            "VERSION_BUILD": self.version_build,
             "OLD_VERSION": self.old_version or "",
             "PACKAGE": self.package,
             "SPEC_FILE": self.spec_file,
