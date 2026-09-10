@@ -395,7 +395,7 @@ HUM-4990/HUM-4789 for the ongoing discussion.
 
 ## Variable substitution
 
-`${VERSION}`, `${VERSION_MAJOR}`, `${VERSION_MINOR}`, `${VERSION_PATCH}`,
+`${VERSION}`, `${VERSION_MAJOR}`, `${VERSION_MINOR}`, `${VERSION_PATCH}`, `${VERSION_BUILD}`,
 `${OLD_VERSION}`, `${PACKAGE}`, `${SPEC_FILE}`, `${PACKAGE_DIR}`,
 `${UPSTREAM_REPO}` are available in any string value in the pipeline YAML.
 
