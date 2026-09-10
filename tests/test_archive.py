@@ -264,6 +264,40 @@ def test_pack_files_normalizes_mtime_and_owner_fields(tmp_path):
     assert member.gname == ""
 
 
+def test_pack_files_normalizes_checkout_permission_modes(tmp_path):
+    """GitLab's permissive checkout umask must not change archive bytes."""
+    normal = tmp_path / "normal"
+    permissive = tmp_path / "permissive"
+    normal.mkdir()
+    permissive.mkdir()
+
+    for directory in (normal, permissive):
+        (directory / "Makefile").write_text("all:\n\ttrue\n")
+        script = directory / "helper.sh"
+        script.write_text("#!/bin/sh\necho helper\n")
+
+    os.chmod(normal / "Makefile", 0o644)
+    os.chmod(normal / "helper.sh", 0o755)
+    os.chmod(permissive / "Makefile", 0o666)
+    os.chmod(permissive / "helper.sh", 0o777)
+
+    normal_archive = tmp_path / "normal.tar.gz"
+    permissive_archive = tmp_path / "permissive.tar.gz"
+    pack_files(
+        [(normal / "Makefile", "Makefile"), (normal / "helper.sh", "helper.sh")],
+        normal_archive,
+    )
+    pack_files(
+        [(permissive / "Makefile", "Makefile"), (permissive / "helper.sh", "helper.sh")],
+        permissive_archive,
+    )
+
+    assert normal_archive.read_bytes() == permissive_archive.read_bytes()
+    with tarfile.open(permissive_archive) as tar:
+        modes = {member.name: member.mode for member in tar.getmembers()}
+    assert modes == {"Makefile": 0o644, "helper.sh": 0o755}
+
+
 def test_pack_files_is_deterministic_regardless_of_source_mtime(tmp_path):
     def build(offset, dest_name):
         top = tmp_path / f"pkg-{offset}"
