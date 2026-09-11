@@ -125,6 +125,19 @@ def test_transform_vendor_bump_then_vendor_sequencing():
     assert spec.toolchain.entries == [ToolchainEntry(name="go", version="1.22.0")]
 
 
+def test_transform_vendor_can_sync_go_modules_to_source():
+    spec = parse_pipeline_spec(
+        {
+            "transform": [
+                {"type": "vendor", "ecosystem": "go", "sync-go-modules": True}
+            ]
+        }
+    )
+    step = spec.transform.steps[0]
+    assert isinstance(step, VendorStep)
+    assert step.sync_go_modules is True
+
+
 def test_transform_build_ui_step_parses():
     spec = build_pipeline_spec(
         FIXTURES / "transform-build-ui.yaml", substitution_vars=make_vars()

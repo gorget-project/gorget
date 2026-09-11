@@ -1,5 +1,6 @@
 import subprocess
 import tarfile
+from pathlib import Path
 from unittest.mock import Mock
 
 from gorget.config.schema import (
@@ -15,10 +16,11 @@ from gorget.config.schema import (
 )
 from gorget.config.substitution import SubstitutionVars
 from gorget.context import RunContext
-from gorget.fetch.base import FetchedArtifact
+from gorget.fetch.base import FetchedArtifact, build_artifact
 from gorget.pipeline.result import PipelineReport
 from gorget.pipeline.stages.transform import TransformStage
 from gorget.pipeline.state import StageState
+from gorget.util.archive import make_tar_gz
 
 
 def make_run_ctx(package_dir, dry_run=False):
@@ -132,6 +134,56 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
         mocker.call(["go", "mod", "tidy"], cwd=source_dir, env={"GOWORK": "off"}),
         mocker.call(["go", "mod", "vendor"], cwd=source_dir, env={"GOWORK": "off"}),
     ]
+
+
+def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, mocker):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "go.mod").write_text("module example.com/source\n")
+    (source_dir / "go.sum").write_text("old checksum\n")
+    package_dir = tmp_path / "package"
+    package_dir.mkdir()
+    (package_dir / "go-vendor-tools.toml").write_text(
+        '[archive.dependency_overrides]\n"golang.org/x/text" = "v0.39.0"\n'
+    )
+    (package_dir / "foo.spec").write_text("Name: foo\n")
+    archive = tmp_path / "foo-1.2.3.tar.gz"
+    make_tar_gz(source_dir, archive, arcname="foo-1.2.3", mtime=1700000000)
+    artifact = build_artifact(archive, archive.name, "repo", dry_run=False)
+
+    def fake_go_vendor(args, cwd=None, env=None):
+        cwd = Path(cwd)
+        if args[:2] == ["go", "get"]:
+            (cwd / "go.mod").write_text("module example.com/source\nrequire x v0.39.0\n")
+            (cwd / "go.sum").write_text("new checksum\n")
+        if args == ["go", "mod", "vendor"]:
+            (cwd / "vendor").mkdir()
+            (cwd / "vendor" / "modules.txt").write_text("x v0.39.0\n")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    mocker.patch("gorget.fetch.vendor.go.run", side_effect=fake_go_vendor)
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.base.commit_timestamp", return_value=1700000000)
+    ctx = make_run_ctx(package_dir)
+    state = make_state(tmp_path / "work", artifacts=[artifact], source_dir=source_dir)
+    state.source_artifact = artifact
+    state.source_is_checkout = True
+    spec = PipelineSpec(
+        transform=TransformSection(
+            steps=[VendorStep(ecosystem="go", sync_go_modules=True)]
+        )
+    )
+
+    TransformStage().run(ctx, spec, state)
+
+    assert (source_dir / "go.mod").read_text().endswith("require x v0.39.0\n")
+    assert (source_dir / "go.sum").read_text() == "new checksum\n"
+    assert not (source_dir / "vendor").exists()
+    with tarfile.open(archive) as source_archive:
+        names = source_archive.getnames()
+        assert "foo-1.2.3/go.mod" in names
+        assert not any("/vendor/" in name for name in names)
+    assert state.source_dirty is False
 
 
 def test_syncs_source_dir_back_to_state_after_extraction(tmp_path, mocker):

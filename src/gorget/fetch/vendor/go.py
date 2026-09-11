@@ -63,7 +63,9 @@ def _pre_commands_mutate_gomod(pre_commands: list[list[str]]) -> bool:
     return any(_GOMOD_MUTATION_RE.search(" ".join(command)) for command in pre_commands)
 
 
-def _validate_gomod_patch_sync(package_dir: Path, config: _ArchiveConfig) -> None:
+def _validate_gomod_patch_sync(
+    package_dir: Path, config: _ArchiveConfig, *, sync_go_modules: bool
+) -> None:
     """gorget's `fetch: {git}` step archives Source0 from the checkout
     *before* handing that same checkout to `vendor:` -- so pre_commands (and
     dependency_overrides, each applied via `go get <path>@<version>`) mutate
@@ -77,7 +79,9 @@ def _validate_gomod_patch_sync(package_dir: Path, config: _ArchiveConfig) -> Non
     transform/vendor_bump.py, since a `vendor-bump` step mutates go.mod the
     same way.
     """
-    if not (_pre_commands_mutate_gomod(config.pre_commands) or config.dependency_overrides):
+    if sync_go_modules or not (
+        _pre_commands_mutate_gomod(config.pre_commands) or config.dependency_overrides
+    ):
         return
 
     raise_unless_spec_patches_gomod(
@@ -98,10 +102,13 @@ class GoVendor:
         package_dir: Path | None = None,
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
+        sync_go_modules: bool = False,
     ) -> Path:
         config = _load_archive_config(package_dir)
         if package_dir is not None:
-            _validate_gomod_patch_sync(package_dir, config)
+            _validate_gomod_patch_sync(
+                package_dir, config, sync_go_modules=sync_go_modules
+            )
 
         commands = [
             *config.pre_commands,

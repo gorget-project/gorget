@@ -2,9 +2,12 @@ import subprocess
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from gorget.config.schema import GitStep, PipelineSpec, ToolchainEntry, ToolchainSection, VendorStep
 from gorget.config.substitution import SubstitutionVars
 from gorget.context import RunContext
+from gorget.exceptions import GorgetConfigError
 from gorget.pipeline.result import PipelineReport
 from gorget.pipeline.stages.fetch import FetchStage
 from gorget.pipeline.state import StageState
@@ -92,3 +95,15 @@ def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mo
         mocker.call(["go", "mod", "tidy"], cwd=state.source_dir, env={"GOWORK": "off"}),
         mocker.call(["go", "mod", "vendor"], cwd=state.source_dir, env={"GOWORK": "off"}),
     ]
+
+
+def test_fetch_stage_rejects_sync_go_modules(tmp_path):
+    ctx = make_run_ctx(tmp_path)
+    state = make_state(tmp_path / "work")
+
+    with pytest.raises(GorgetConfigError, match="transform vendor step"):
+        FetchStage().run(
+            ctx,
+            PipelineSpec(fetch=[VendorStep(ecosystem="go", sync_go_modules=True)]),
+            state,
+        )
