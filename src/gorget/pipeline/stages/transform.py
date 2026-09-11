@@ -44,6 +44,8 @@ class _VendorStepAdapter:
     def run(self, step: VendorStep, ctx: TransformContext, state: StageState) -> None:
         artifacts: list[FetchedArtifact] = _vendor_handler.run(step, ctx)
         state.artifacts.extend(artifacts)
+        if step.sync_go_modules:
+            state.source_dirty = True
 
 
 # See `fetch/stages/fetch.py` for why this dict is typed loosely rather than

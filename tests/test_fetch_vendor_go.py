@@ -272,6 +272,21 @@ class TestGomodPatchSync:
             GoVendor().vendor(tmp_path, package_dir=package_dir)
         mock_run.assert_not_called()
 
+    def test_sync_go_modules_allows_dependency_override_without_spec_patch(self, tmp_path, mocker):
+        package_dir = tmp_path / "pkg"
+        package_dir.mkdir()
+        (package_dir / "go-vendor-tools.toml").write_text(
+            '[archive.dependency_overrides]\n"golang.org/x/text" = "v0.39.0"\n'
+        )
+        self._spec_with_patch(package_dir, patch_touches_gomod=False)
+        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+
+        GoVendor().vendor(tmp_path, package_dir=package_dir, sync_go_modules=True)
+
+        assert mock_run.call_args_list[0] == mocker.call(
+            ["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path, env=_OFF
+        )
+
     def test_precommand_not_touching_gomod_is_allowed_without_a_patch(self, tmp_path, mocker):
         package_dir = tmp_path / "pkg"
         package_dir.mkdir()

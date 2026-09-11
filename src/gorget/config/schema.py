@@ -88,6 +88,11 @@ class VendorStep:
     archive_name: str | None = None
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
     platforms: list[VendorPlatform] | None = None
+    # Go-only, transform-stage option. Run vendoring in an isolated copy of
+    # the source tree, then synchronize the resulting module metadata back to
+    # Source0 and repack it. This keeps Source0 and vendor/modules.txt in
+    # agreement when go-vendor-tools.toml applies dependency overrides.
+    sync_go_modules: bool = False
 
 
 FetchStep = SpecUpdateStep | SpecSourceStep | UrlStep | GitStep | VendorStep

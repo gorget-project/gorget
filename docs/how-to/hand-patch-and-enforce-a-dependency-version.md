@@ -59,7 +59,7 @@ the only ordering that lets the pin's edit land before vendoring reads it.
 See [`go-pipeline-demo`](../../examples/go-pipeline-demo/) for this running
 against a real `go.mod`.
 
-**For the `go` ecosystem, you also need a spec patch.** `fetch: {git}`
+**For the `go` ecosystem, you normally also need a spec patch.** `fetch: {git}`
 archives `Source0` from the checkout *before* `vendor-bump` edits `go.mod` in
 that same checkout -- the edit only ever reaches the vendor archive, never
 the plain source tarball. Without a spec patch replicating the same
@@ -74,6 +74,26 @@ are hermetic and `%prep` can't re-run those commands itself. This is exactly
 what broke `trivy` for real, via the equivalent `go-vendor-tools.toml`
 `pre_commands` mechanism -- see `gorget/fetch/vendor/gomod_patch_sync.py`'s
 module docstring for the full mechanism, which is identical for both.
+
+When a package uses `go-vendor-tools.toml` dependency overrides, it can instead
+synchronize the generated module metadata into `Source0` itself:
+
+```yaml
+fetch:
+  - type: git
+    repo: "${UPSTREAM_REPO}"
+    ref: "v${VERSION}"
+transform:
+  - type: vendor
+    ecosystem: go
+    sync-go-modules: true
+```
+
+Gorget vendors an isolated copy of the source tree, copies only `go.mod`,
+`go.sum`, `go.work`, and `go.work.sum` back to Source0, and deterministically
+repacks Source0. It deliberately does not copy the generated `vendor/` tree;
+that remains Source1. `sync-go-modules` is transform-only because it needs the
+transform stage's source-artifact repack step.
 
 ## 2. Enforce it forever
 

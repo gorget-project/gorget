@@ -7,7 +7,13 @@ against the concrete `FetchContext`).
 
 from __future__ import annotations
 
-from gorget.config.schema import VendorStep
+import shutil
+import tempfile
+from collections.abc import Sequence
+from pathlib import Path
+from typing import cast
+
+from gorget.config.schema import ToolchainEntry, VendorPlatform, VendorStep
 from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchedArtifact, build_artifact
 from gorget.fetch.vendor.base import VendorEcosystem, VendorRunContext
@@ -44,20 +50,41 @@ class VendorHandler:
                     "A 'vendor' step requires a preceding 'git' step in the same "
                     "pipeline to establish a source checkout to vendor against"
                 )
+            source_dir = ctx.source_dir
+            vendor_source_dir = source_dir
+            if step.sync_go_modules:
+                if step.ecosystem != "go":
+                    raise GorgetConfigError(
+                        "sync-go-modules is only supported for ecosystem: go"
+                    )
+                ctx.work_dir.mkdir(parents=True, exist_ok=True)
+                vendor_source_dir = Path(
+                    tempfile.mkdtemp(prefix="_vendor_source-", dir=ctx.work_dir)
+                ) / "source"
+                shutil.copytree(
+                    source_dir,
+                    vendor_source_dir,
+                    symlinks=True,
+                    ignore=shutil.ignore_patterns(".git"),
+                )
             module_outputs = [
                 (
                     module,
-                    ecosystem.vendor(
-                        ctx.source_dir / module.path,
+                    self._vendor_module(
+                        ecosystem,
+                        vendor_source_dir / module.path,
                         ctx.toolchain,
                         ctx.package_dir,
                         module.use_workspace,
                         step.platforms or (),
+                        sync_go_modules=step.sync_go_modules,
                     ),
                 )
                 for module in step.modules
             ]
-            mtime = commit_timestamp(ctx.source_dir)
+            if step.sync_go_modules:
+                self._sync_go_module_files(source_dir, vendor_source_dir, step)
+            mtime = commit_timestamp(source_dir)
             # Only the single-unnamed-module ("bare vendor/") case needs
             # root_files -- combine_vendor_archives ignores them otherwise
             # anyway, but there's nothing to gain from an archive_root_files
@@ -72,3 +99,42 @@ class VendorHandler:
             )
 
         return [build_artifact(archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run)]
+
+    @staticmethod
+    def _vendor_module(
+        ecosystem: VendorEcosystem,
+        module_dir: Path,
+        toolchain: Sequence[ToolchainEntry],
+        package_dir: Path,
+        use_workspace: bool,
+        platforms: Sequence[VendorPlatform],
+        *,
+        sync_go_modules: bool,
+    ) -> Path:
+        if sync_go_modules:
+            go_vendor = cast(GoVendor, ecosystem)
+            return go_vendor.vendor(
+                module_dir,
+                toolchain,
+                package_dir,
+                use_workspace,
+                platforms,
+                sync_go_modules=True,
+            )
+        return ecosystem.vendor(module_dir, toolchain, package_dir, use_workspace, platforms)
+
+    @staticmethod
+    def _sync_go_module_files(
+        source_dir: Path, vendor_source_dir: Path, step: VendorStep
+    ) -> None:
+        """Copy module metadata, but never the generated vendor tree, to Source0."""
+        for module in step.modules:
+            source_module = source_dir / module.path
+            vendor_module = vendor_source_dir / module.path
+            for filename in ("go.mod", "go.sum", "go.work", "go.work.sum"):
+                generated = vendor_module / filename
+                destination = source_module / filename
+                if generated.is_file():
+                    shutil.copyfile(generated, destination)
+                elif destination.is_file():
+                    destination.unlink()

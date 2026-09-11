@@ -19,6 +19,7 @@ from gorget.config.schema import (
     VendorStep,
 )
 from gorget.context import RunContext
+from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchContext
 from gorget.fetch.git import GitHandler
 from gorget.fetch.spec_source import SpecSourceHandler
@@ -59,6 +60,11 @@ class FetchStage:
             toolchain=spec.toolchain.entries,
         )
         for step in spec.fetch:
+            if isinstance(step, VendorStep) and step.sync_go_modules:
+                raise GorgetConfigError(
+                    "sync-go-modules must be used on a transform vendor step so "
+                    "Gorget can repack the synchronized Source0 archive"
+                )
             handler = _HANDLERS[type(step)]
             logger.debug("fetch step: %s", step)
             source_dir_before = fetch_ctx.source_dir

@@ -65,6 +65,7 @@ def test_git_step_accepts_submodule_modes():
 def test_vendor_step_default_single_module():
     step = VendorStep(ecosystem="go")
     assert step.modules == [VendorModule(path=".")]
+    assert step.sync_go_modules is False
 
 
 def test_strip_tarball_step_defaults():
