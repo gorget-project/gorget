@@ -19,6 +19,11 @@ class FetchedArtifact:
     output_name: str
     source_description: str
     checksum: str | None  # None under --dry-run, when no bytes were actually fetched
+    # Whether this fetch primitive supports the Git-specific
+    # `allow-version-change` escape hatch. This is intentionally internal:
+    # config opts in through the fetch step, never through an artifact.
+    version_change_eligible: bool = False
+    allow_version_change: bool = False
 
 
 @dataclass(kw_only=True)
@@ -40,11 +45,22 @@ class FetchStepHandler(Protocol):
 
 
 def build_artifact(
-    path: Path, output_name: str, source_description: str, dry_run: bool
+    path: Path,
+    output_name: str,
+    source_description: str,
+    dry_run: bool,
+    *,
+    version_change_eligible: bool = False,
+    allow_version_change: bool = False,
 ) -> FetchedArtifact:
     checksum = None if dry_run else compute_digest(path, CHECKSUM_ALGO)
     return FetchedArtifact(
-        path=path, output_name=output_name, source_description=source_description, checksum=checksum
+        path=path,
+        output_name=output_name,
+        source_description=source_description,
+        checksum=checksum,
+        version_change_eligible=version_change_eligible,
+        allow_version_change=allow_version_change,
     )
 
 

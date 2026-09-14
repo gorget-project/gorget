@@ -52,6 +52,22 @@ def _suggest_accepted_checksums_block(output_name: str, checksum: str | None) ->
     )
 
 
+def _version_change_hint(ctx: RunContext, artifact) -> str:
+    if (
+        artifact.version_change_eligible
+        and not artifact.allow_version_change
+        and ctx.vars.old_version is not None
+        and ctx.vars.old_version != ctx.vars.version
+    ):
+        return (
+            " If this stable-named artifact is intentionally regenerated from a Git ref "
+            "as part of this version update, consider adding `allow-version-change: true` "
+            "to that `type: git` fetch step. Do not use it for an unchanged source or "
+            "for auxiliary artifacts that should remain byte-identical."
+        )
+    return ""
+
+
 def check_republication(
     ctx: RunContext, state: StageState, accepted_entries: list[AcceptedChecksumEntry]
 ) -> list[CheckResult]:
@@ -78,6 +94,24 @@ def check_republication(
         if actual_digest.lower() == existing_digest:
             continue  # unchanged
 
+        if (
+            artifact.allow_version_change
+            and ctx.vars.old_version is not None
+            and ctx.vars.old_version != ctx.vars.version
+        ):
+            results.append(
+                CheckResult(
+                    type="republication",
+                    target=artifact.output_name,
+                    status="expected-version-change",
+                    reason=(
+                        f"Declared version-bound source changed from "
+                        f"{ctx.vars.old_version} to {ctx.vars.version}"
+                    ),
+                )
+            )
+            continue
+
         if (artifact.output_name, artifact.checksum) in accepted:
             results.append(
                 CheckResult(
@@ -101,6 +135,7 @@ def check_republication(
                     f"this file. If this is a legitimate re-publication, add to "
                     f"accepted-checksums:\n"
                     f"{_suggest_accepted_checksums_block(artifact.output_name, artifact.checksum)}"
+                    f"{_version_change_hint(ctx, artifact)}"
                 ),
             )
         )

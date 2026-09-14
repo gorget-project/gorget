@@ -12,7 +12,7 @@ from gorget.pipeline.state import StageState
 from gorget.verify.republication import check_republication, parse_sources_manifest
 
 
-def make_ctx(package_dir):
+def make_ctx(package_dir, *, version="1.2.3", old_version=None):
     return RunContext(
         package_dir=package_dir,
         pipeline_file=package_dir / "pipeline.yaml",
@@ -21,7 +21,7 @@ def make_ctx(package_dir):
         dry_run=False,
         spec_path=package_dir / "foo.spec",
         vars=SubstitutionVars(
-            version="1.2.3", old_version=None, package="foo", spec_file="foo.spec"
+            version=version, old_version=old_version, package="foo", spec_file="foo.spec"
         ),
     )
 
@@ -117,6 +117,83 @@ def test_mismatched_checksum_accepted_via_override(tmp_path):
 
     assert len(results) == 1
     assert results[0].status == "accepted"
+
+
+def test_version_bound_artifact_allows_expected_change_during_version_update(tmp_path):
+    (tmp_path / "sources").write_text("SHA512 (foo.tar.gz) = " + "a" * 128 + "\n")
+    artifact_path = tmp_path / "foo.tar.gz"
+    artifact_path.write_bytes(b"new version content")
+    checksum = hashlib.sha512(b"new version content").hexdigest()
+
+    ctx = make_ctx(tmp_path, version="1.2.4", old_version="1.2.3")
+    artifact = FetchedArtifact(
+        path=artifact_path,
+        output_name="foo.tar.gz",
+        source_description="https://example.test/foo.git@v1.2.4",
+        checksum=checksum,
+        allow_version_change=True,
+    )
+
+    results = check_republication(ctx, make_state(tmp_path, [artifact]), [])
+
+    assert len(results) == 1
+    assert results[0].status == "expected-version-change"
+    assert "1.2.3 to 1.2.4" in results[0].reason
+
+
+def test_version_bound_artifact_still_fails_without_a_version_change(tmp_path):
+    (tmp_path / "sources").write_text("SHA512 (foo.tar.gz) = " + "a" * 128 + "\n")
+    artifact_path = tmp_path / "foo.tar.gz"
+    artifact_path.write_bytes(b"changed tag content")
+    checksum = hashlib.sha512(b"changed tag content").hexdigest()
+
+    ctx = make_ctx(tmp_path, version="1.2.3", old_version="1.2.3")
+    artifact = FetchedArtifact(
+        path=artifact_path,
+        output_name="foo.tar.gz",
+        source_description="https://example.test/foo.git@v1.2.3",
+        checksum=checksum,
+        allow_version_change=True,
+    )
+
+    results = check_republication(ctx, make_state(tmp_path, [artifact]), [])
+
+    assert len(results) == 1
+    assert results[0].status == "failed"
+
+
+def test_git_artifact_mismatch_during_update_suggests_allow_version_change(tmp_path):
+    (tmp_path / "sources").write_text("SHA512 (foo.tar.gz) = " + "a" * 128 + "\n")
+    artifact_path = tmp_path / "foo.tar.gz"
+    artifact_path.write_bytes(b"new version content")
+    checksum = hashlib.sha512(b"new version content").hexdigest()
+    ctx = make_ctx(tmp_path, version="1.2.4", old_version="1.2.3")
+    artifact = FetchedArtifact(
+        path=artifact_path,
+        output_name="foo.tar.gz",
+        source_description="https://example.test/foo.git@v1.2.4",
+        checksum=checksum,
+        version_change_eligible=True,
+    )
+
+    results = check_republication(ctx, make_state(tmp_path, [artifact]), [])
+
+    assert results[0].status == "failed"
+    assert "allow-version-change: true" in results[0].reason
+
+
+def test_non_git_artifact_mismatch_during_update_does_not_suggest_git_setting(tmp_path):
+    (tmp_path / "sources").write_text("SHA512 (foo.tar.gz) = " + "a" * 128 + "\n")
+    artifact_path = tmp_path / "foo.tar.gz"
+    artifact_path.write_bytes(b"new version content")
+    checksum = hashlib.sha512(b"new version content").hexdigest()
+    ctx = make_ctx(tmp_path, version="1.2.4", old_version="1.2.3")
+    artifact = make_artifact(artifact_path, "foo.tar.gz", checksum)
+
+    results = check_republication(ctx, make_state(tmp_path, [artifact]), [])
+
+    assert results[0].status == "failed"
+    assert "allow-version-change: true" not in results[0].reason
 
 
 def test_legacy_md5_manifest_compares_at_md5(tmp_path):

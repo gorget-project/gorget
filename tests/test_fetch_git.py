@@ -76,7 +76,25 @@ def test_shallow_clone_of_tag_uses_branch_and_depth(tmp_path, mocker):
     # test_archive_internal_prefix_uses_bare_version_not_ref below).
     assert artifacts[0].output_name == "foo-1.2.3.tar.gz"
     assert artifacts[0].checksum is not None
+    assert artifacts[0].source_description == "https://example.com/repo.git@v1.2.3"
+    assert artifacts[0].version_change_eligible is True
     assert (tmp_path / "foo-1.2.3.tar.gz").exists()
+
+
+def test_git_fetch_propagates_allow_version_change_to_artifact(tmp_path, mocker):
+    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
+
+    artifacts = GitHandler().run(
+        GitStep(
+            repo="https://example.com/repo.git",
+            ref="v1.2.4",
+            allow_version_change=True,
+        ),
+        make_ctx(tmp_path),
+    )
+
+    assert artifacts[0].allow_version_change is True
 
 
 def test_shallow_clone_of_sha_ref_uses_targeted_fetch(tmp_path, mocker):

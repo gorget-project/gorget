@@ -55,6 +55,11 @@ class GitStep:
     submodules: Literal["none", "shallow", "full"] = "none"
     archive_name: str | None = None
     subdir: str | None = None
+    # A Git ref which is deliberately advanced as part of an upstream version
+    # update can produce different bytes while retaining a stable archive
+    # name required by the spec.  When true, re-publication detection records
+    # that expected change only when --old-version differs from --version.
+    allow_version_change: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)

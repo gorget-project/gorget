@@ -242,6 +242,28 @@ it separately. Each entry requires a human-authored `reason:`, so accepting
 a re-publication always leaves an audit trail rather than silently
 suppressing the check.
 
+### Stable artifact names across version updates
+
+Some specs require a stable source filename even though the source is fetched
+from a Git tag that advances with every upstream release.  Declare that narrow
+case on the Git fetch step:
+
+```yaml
+fetch:
+  - type: git
+    repo: "${UPSTREAM_REPO}"
+    ref: "v${VERSION}"
+    archive_name: "project-source.tar.gz"
+    allow-version-change: true
+```
+
+When Gorget is invoked for an actual update (`--old-version` differs from
+`--version`), a changed checksum for this artifact is reported as an
+`expected-version-change` rather than a re-publication failure. A rerun for
+the same version still fails closed if the ref produces different content.
+This is not a replacement for `accepted-checksums:`: use that only when the
+same intended source was genuinely re-published with different bytes.
+
 ### `policy:`
 
 Runs after `verify:`, before Emit. Validates the *final vendored output* --
