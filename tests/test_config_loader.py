@@ -89,6 +89,26 @@ def test_build_pipeline_spec_fetch_only():
     assert spec.fetch == [SpecSourceStep(index=0)]
 
 
+def test_git_fetch_allow_version_change_parses():
+    spec = parse_pipeline_spec(
+        {
+            "fetch": [
+                {
+                    "type": "git",
+                    "repo": "https://example.test/project.git",
+                    "ref": "v1.2.3",
+                    "archive-name": "project-source.tar.gz",
+                    "allow-version-change": True,
+                }
+            ]
+        }
+    )
+
+    step = spec.fetch[0]
+    assert isinstance(step, GitStep)
+    assert step.allow_version_change is True
+
+
 def test_build_pipeline_spec_vendor_multi_submodule():
     spec = build_pipeline_spec(
         FIXTURES / "vendor-multi-submodule.yaml", substitution_vars=make_vars()

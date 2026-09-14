@@ -79,7 +79,16 @@ class GitHandler:
             arcname = strip_archive_suffix(archive_name)
             make_tar_gz(src, archive_path, arcname=arcname, mtime=mtime)
 
-        return [build_artifact(archive_path, archive_name, step.repo, ctx.dry_run)]
+        return [
+            build_artifact(
+                archive_path,
+                archive_name,
+                f"{step.repo}@{step.ref}",
+                ctx.dry_run,
+                version_change_eligible=True,
+                allow_version_change=step.allow_version_change,
+            )
+        ]
 
     def _clone(self, step: GitStep, dest: Path) -> None:
         if step.shallow and not _looks_like_sha(step.ref):
