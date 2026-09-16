@@ -14,7 +14,7 @@ and a Policy check layered on top.
 | Transform | `vendor-bump` | Bumps `rsc.io/quote` from `v1.0.0` to `v1.5.2` |
 | Transform | `vendor` | Vendors the now-bumped dependency |
 | Transform | `build-ui` | Runs `npm run build` in `ui/`, archives `dist/` |
-| Transform | `run` | Escape hatch: runs `go version`, archives the output file |
+| Transform | `run` | Runs Go plus direct and `/usr/bin/env` Node version checks |
 | Transform | `pack` | Packs `setup-demo-repo.sh` (already in `--package-dir`) into a deterministic archive |
 | Verify | `gpg-signature` | Verifies GNU Hello's tarball against its real upstream maintainer key |
 | Verify | *(implicit)* | Re-publication detection runs automatically since `sources` exists here |
@@ -27,8 +27,10 @@ adding coverage): `spec-update`/`spec-source` fetch steps (see
 no example yet), `audit:`/`license-compliance:` policy checks (see
 `../policy-demo`).
 
-Requires `git`, `go`, `npm`, and `gpg` on `PATH`, plus network access
-(`proxy.golang.org`, `registry.npmjs.org`, `ftp.gnu.org`).
+Requires `git`, `go`, `gpg`, and parallel-installed `node-24`/`npm-24`, plus
+network access (`proxy.golang.org`, `registry.npmjs.org`, `ftp.gnu.org`). The
+Hummingbird GitLab CI image includes the Node.js 24 commands alongside its
+default Node.js version.
 
 ## 1. Set up the demo repo (once)
 
@@ -67,8 +69,10 @@ tar tzf /tmp/gorget-full-output/demo-vendor.tar.gz | grep quote
 # build-ui: the built dist/ output, archived
 tar tzf /tmp/gorget-full-output/demo-ui-assets.tar.gz
 
-# run: the escape-hatch command's declared output, archived verbatim
+# run: the escape-hatch command's declared outputs, archived verbatim
 cat /tmp/gorget-full-output/go-version.txt
+cat /tmp/gorget-full-output/node-version.txt
+cat /tmp/gorget-full-output/env-node-version.txt
 
 # pack: setup-demo-repo.sh packed verbatim, at its own relative path
 tar tzf /tmp/gorget-full-output/demo-packaging-scripts.tar.gz
@@ -109,32 +113,33 @@ git checkout demo.source-pipeline.yaml   # revert
 Exit code 2, `error: Policy violation (1 check(s)): - [vendor-constraints]
 rsc.io/quote: rsc.io/quote is v1.5.2, need >= 9.9.9 (...)`.
 
-## 5. `toolchain:` -- validates ambient Go
+## 5. `toolchain:` -- activates an installed Node.js RPM
 
-`demo.source-pipeline.yaml` has a commented-out `toolchain:` section near
-the bottom. `setup-demo-repo.sh` prints your machine's actual installed
-`go` version -- uncomment the section and paste that value in:
+The pipeline declares Node.js 24 directly:
 
 ```yaml
 toolchain:
-  - name: go
-    version: 1.25.10   # <- whatever setup-demo-repo.sh printed for you
+  - name: node
+    version: "24"
 ```
 
-Re-run step 2 and it passes: gorget checks the declared version against
-whatever's already installed (`go version`) and matches component-wise, so
-`1.25` matches an installed `1.25.10`. Change `version:` to something that
-doesn't match (e.g. `1.22.0`) and it fails closed instead, before any stage
-runs (even under `--dry-run`):
+Gorget finds the trusted, parallel-installed `node-24` RPM command and creates
+temporary `node`, `npm`, and `npx` aliases for the complete pipeline. The
+`build-ui` step therefore runs with Node.js 24. The `run` step records both a
+direct `node --version` and `/usr/bin/env node --version`; both output files
+show the same Node.js 24 release, demonstrating that child scripts inherit the
+selection.
+
+The host's default is unchanged. Running `node --version` before and after
+Gorget still reports the system-default Node.js version. If `node-24` is not
+installed, the pipeline fails closed before any stage runs:
 
 ```
-error: Required toolchain go@1.22.0 does not match the active version
-(1.25.10). No matching installed RPM toolchain could be activated; gorget
-never downloads toolchains.
+error: Required toolchain node@24 does not match the active version (...).
+No matching installed RPM toolchain could be activated; gorget never downloads
+toolchains.
 ```
 
-Go RPMs currently expose only an unversioned command, so Go declarations are a
-safety check against the ambient environment. Node.js and Python declarations
-can activate parallel-installed, distinctly named RPM binaries. Gorget never
-downloads a toolchain. Comment the section back out (or match your real
-version) to get a working pipeline.
+The version is quoted because YAML would otherwise parse bare `24` as an
+integer; toolchain versions are strings. Gorget never downloads a toolchain or
+changes system alternatives.

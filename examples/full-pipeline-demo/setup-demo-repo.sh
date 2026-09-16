@@ -57,13 +57,12 @@ git commit -q -m "initial"
 
 echo "Demo repo created at $(pwd)"
 
-if command -v go >/dev/null; then
-  installed_go=$(go version | grep -oE 'go[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^go//')
+if command -v node >/dev/null; then
   echo ""
-  echo "Detected installed go version: ${installed_go}"
-  echo "To try the toolchain: section in demo.source-pipeline.yaml (see its"
-  echo "bottom and README.md section 4), use this version -- e.g.:"
-  echo "    toolchain:"
-  echo "      - name: go"
-  echo "        version: ${installed_go}"
+  echo "Default Node.js: $(node --version)"
+fi
+if command -v node-24 >/dev/null; then
+  echo "Node.js selected by the demo toolchain: $(node-24 --version)"
+else
+  echo "node-24 is not installed; install the Node.js 24 RPM before running the demo."
 fi
