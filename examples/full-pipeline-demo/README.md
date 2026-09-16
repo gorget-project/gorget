@@ -121,9 +121,12 @@ The pipeline declares Node.js 24 directly:
 toolchain:
   - name: node
     version: "24"
+    minimum-version: "24.16"
 ```
 
-Gorget finds the trusted, parallel-installed `node-24` RPM command and creates
+`version` selects the Node.js 24 RPM stream, while `minimum-version` enforces
+Jaeger's actual Node.js requirement. Gorget finds the trusted,
+parallel-installed `node-24` RPM command and creates
 temporary `node`, `npm`, and `npx` aliases for the complete pipeline. The
 `build-ui` step therefore runs with Node.js 24. The `run` step records both a
 direct `node --version` and `/usr/bin/env node --version`; both output files
@@ -140,6 +143,5 @@ No matching installed RPM toolchain could be activated; gorget never downloads
 toolchains.
 ```
 
-The version is quoted because YAML would otherwise parse bare `24` as an
-integer; toolchain versions are strings. Gorget never downloads a toolchain or
-changes system alternatives.
+The versions are quoted because toolchain versions are strings. Gorget never
+downloads a toolchain or changes system alternatives.

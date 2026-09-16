@@ -23,7 +23,6 @@ import contextlib
 import logging
 import os
 import re
-import shutil
 import tempfile
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -45,34 +44,65 @@ _VERSION_CHECKS: dict[str, tuple[list[str], re.Pattern[str]]] = {
     "maven": (["mvn", "--version"], re.compile(r"Apache Maven (\d+\.\d+\.\d+)")),
 }
 _DECLARED_VERSION = re.compile(r"\d+(?:\.\d+)*")
+_RPM_BINDIR = Path("/usr/bin")
+
+
+def _parse_declared_version(entry: ToolchainEntry, value: object, field: str) -> list[str]:
+    if not isinstance(value, str) or _DECLARED_VERSION.fullmatch(value) is None:
+        raise GorgetConfigError(
+            f"Invalid {field} for toolchain {entry.name!r}: {value!r} "
+            "(expected dot-separated numeric components)"
+        )
+    return value.split(".")
 
 
 def _version_parts(entry: ToolchainEntry) -> list[str]:
-    if not isinstance(entry.version, str) or _DECLARED_VERSION.fullmatch(entry.version) is None:
-        raise GorgetConfigError(
-            f"Invalid version for toolchain {entry.name!r}: {entry.version!r} "
-            "(expected dot-separated numeric components)"
-        )
-    return entry.version.split(".")
+    version_parts = _parse_declared_version(entry, entry.version, "version")
+    if entry.minimum_version is not None:
+        _parse_declared_version(entry, entry.minimum_version, "minimum-version")
+    return version_parts
 
 
-def _versioned_aliases(entry: ToolchainEntry, search_path: str) -> dict[str, str]:
+def _rpm_owned(path: Path) -> bool:
+    try:
+        result = run([str(_RPM_BINDIR / "rpm"), "-qf", str(path)])
+    except FileNotFoundError:
+        return False
+    return result.returncode == 0
+
+
+def _installed_rpm_binary(name: str) -> str | None:
+    path = _RPM_BINDIR / name
+    if not path.is_file() or not os.access(path, os.X_OK):
+        return None
+    if not _rpm_owned(path):
+        logger.debug("ignoring non-RPM toolchain executable: %s", path)
+        return None
+    return str(path)
+
+
+def _versioned_aliases(entry: ToolchainEntry) -> dict[str, str]:
     """Return PATH aliases backed by installed, distinctly named RPM binaries."""
     version_parts = _version_parts(entry)
 
     if entry.name == "node":
         suffix = version_parts[0]
-        aliases = ("node", "npm", "npx")
-        return {
-            alias: target
-            for alias in aliases
-            if (target := shutil.which(f"{alias}-{suffix}", path=search_path)) is not None
-        }
+        node = _installed_rpm_binary(f"node-{suffix}")
+        if node is None:
+            return {}
+
+        targets = {"node": node}
+        for alias in ("npm", "npx"):
+            target = _installed_rpm_binary(f"{alias}-{suffix}")
+            if target is None:
+                raise GorgetConfigError(
+                    f"node-{suffix} is installed but {alias}-{suffix} is missing"
+                )
+            targets[alias] = target
+        return targets
 
     if entry.name == "python" and len(version_parts) >= 2:
-        executable = shutil.which(
-            f"python{version_parts[0]}.{version_parts[1]}", path=search_path
-        )
+        executable = _installed_rpm_binary(f"python{version_parts[0]}.{version_parts[1]}")
         if executable is not None:
             return {"python": executable, "python3": executable}
 
@@ -93,7 +123,7 @@ def activate(entries: Sequence[ToolchainEntry]) -> Iterator[None]:
     targets: dict[str, str] = {}
 
     for entry in entries:
-        for alias, target in _versioned_aliases(entry, search_path).items():
+        for alias, target in _versioned_aliases(entry).items():
             previous = targets.get(alias)
             if previous is not None and previous != target:
                 raise GorgetConfigError(
@@ -129,6 +159,15 @@ def _version_matches(declared: str, active: str) -> bool:
     declared_parts = declared.split(".")
     active_parts = active.split(".")
     return declared_parts == active_parts[: len(declared_parts)]
+
+
+def _version_at_least(minimum: str, active: str) -> bool:
+    minimum_parts = tuple(int(part) for part in minimum.split("."))
+    active_parts = tuple(int(part) for part in active.split("."))
+    width = max(len(minimum_parts), len(active_parts))
+    return minimum_parts + (0,) * (width - len(minimum_parts)) <= active_parts + (0,) * (
+        width - len(active_parts)
+    )
 
 
 def verify_installed(entries: Sequence[ToolchainEntry]) -> None:
@@ -169,6 +208,14 @@ def verify_installed(entries: Sequence[ToolchainEntry]) -> None:
                 f"Required toolchain {entry.name}@{entry.version} does not match the "
                 f"active version ({active_version}). No matching installed RPM "
                 f"toolchain could be activated; gorget never downloads toolchains."
+            )
+        if entry.minimum_version is not None and not _version_at_least(
+            entry.minimum_version, active_version
+        ):
+            raise GorgetConfigError(
+                f"Required toolchain {entry.name}@{entry.version} needs at least "
+                f"version {entry.minimum_version}, but the active version is "
+                f"{active_version}."
             )
 
 

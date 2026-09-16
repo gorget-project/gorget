@@ -371,8 +371,9 @@ fails closed otherwise.
 
 ```yaml
 toolchain:
-  - name: go        # one of: go, node, npm, cargo, rustc, python, maven
-    version: 1.22.0
+  - name: node      # one of: go, node, npm, cargo, rustc, python, maven
+    version: "24"   # selected version stream; component-wise prefix match
+    minimum-version: "24.16"  # optional inclusive version floor
 ```
 
 Declares per-package tool version requirements for `vendor`/`vendor-bump`/
@@ -385,8 +386,12 @@ including child scripts that use `/usr/bin/env`, and are removed afterward.
 
 Other tools currently validate the ambient executable (e.g. `go version`).
 Version matching is component-wise (`1.22` matches `1.22.3`), and a mismatch or
-missing tool fails closed. Gorget never installs or downloads a toolchain; the
-required RPM must already be present in the execution image.
+missing tool fails closed. `minimum-version` additionally requires the active
+version to be at least the declared numeric version, so a package can select a
+stable major stream while enforcing its actual runtime floor. Gorget only
+activates absolute `/usr/bin` executables owned by installed RPMs; it never
+installs or downloads a toolchain. The required RPM must already be present in
+the execution image.
 
 An earlier design shelled out to [`mise`](https://mise.jdx.dev/) to activate
 an already-installed version on demand, but that was rejected: mise's job is

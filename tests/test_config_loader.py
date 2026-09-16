@@ -91,7 +91,9 @@ def test_full_pipeline_example_declares_node24_toolchain():
         substitution_vars=make_vars(),
     )
 
-    assert spec.toolchain.entries == [ToolchainEntry(name="node", version="24")]
+    assert spec.toolchain.entries == [
+        ToolchainEntry(name="node", version="24", minimum_version="24.16")
+    ]
 
 
 def test_build_pipeline_spec_fetch_only():

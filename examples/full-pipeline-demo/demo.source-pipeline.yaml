@@ -70,6 +70,7 @@ transform:
 toolchain:
   - name: node
     version: "24"
+    minimum-version: "24.16"
 
 # Real GPG signature check against GNU Hello's actual upstream maintainer key
 # (see ../verify-demo/README.md for where gpg-keys/hello-maintainer.asc came

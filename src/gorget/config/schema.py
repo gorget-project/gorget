@@ -116,6 +116,7 @@ FETCH_STEP_TYPES: dict[str, type] = {
 class ToolchainEntry:
     name: str
     version: str
+    minimum_version: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
