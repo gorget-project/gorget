@@ -1,32 +1,38 @@
-"""Toolchain version validation for installed package build tools.
+"""RPM-native toolchain activation and validation.
 
-Gorget never fetches or switches toolchain versions -- it only checks that
-whatever is *already installed* satisfies the pipeline's declared requirement,
-failing fast (before any stage runs) if it doesn't. This is deliberately the
-narrowest thing that can be useful: no network access, no external version
-manager, no multi-version switching mechanism -- just a safety check against
-the ambient environment.
+Gorget never fetches toolchains. When a distribution provides a requested
+version through distinctly named executables, Gorget temporarily places aliases
+for those executables at the front of ``PATH`` for the duration of the pipeline.
+It then validates the active versions before any stage runs. Tools without an
+RPM-native versioned-executable convention continue to use and validate the
+ambient executable.
 
 A previous design shelled out to `mise` (https://mise.jdx.dev/) to actually
 *activate* a specific version. That was rejected (see HUM-4990): mise's job is
 downloading toolchain binaries directly from their own upstream release
 channels at runtime, exactly the kind of untrusted-source problem Gorget
 exists to eliminate for source tarballs, just one layer up. A real
-multi-version mechanism needs to be RPM-native with zero mid-pipeline network
-dependency (e.g. distinctly-named versioned binaries, the same pattern Fedora
-already uses for python3.9/python3.11/python3.12) -- the exact convention is
-still being decided (HUM-4990/HUM-4789). Until then, this module only
-validates; it never selects between multiple installed versions.
+multi-version mechanism must be RPM-native with zero mid-pipeline network
+dependency. This module implements that mechanism for Node.js (``node-24``)
+and Python (``python3.12``), whose RPMs support parallel installation.
 """
 
 from __future__ import annotations
 
+import contextlib
+import logging
+import os
 import re
-from collections.abc import Sequence
+import shutil
+import tempfile
+from collections.abc import Iterator, Sequence
+from pathlib import Path
 
 from gorget.config.schema import ToolchainEntry
 from gorget.exceptions import GorgetConfigError
 from gorget.util.subprocess_run import run
+
+logger = logging.getLogger("gorget.toolchain")
 
 # name -> (version-check argv, regex whose group(1) captures the version).
 _VERSION_CHECKS: dict[str, tuple[list[str], re.Pattern[str]]] = {
@@ -38,6 +44,82 @@ _VERSION_CHECKS: dict[str, tuple[list[str], re.Pattern[str]]] = {
     "python": (["python3", "--version"], re.compile(r"Python (\d+\.\d+\.\d+)")),
     "maven": (["mvn", "--version"], re.compile(r"Apache Maven (\d+\.\d+\.\d+)")),
 }
+_DECLARED_VERSION = re.compile(r"\d+(?:\.\d+)*")
+
+
+def _version_parts(entry: ToolchainEntry) -> list[str]:
+    if not isinstance(entry.version, str) or _DECLARED_VERSION.fullmatch(entry.version) is None:
+        raise GorgetConfigError(
+            f"Invalid version for toolchain {entry.name!r}: {entry.version!r} "
+            "(expected dot-separated numeric components)"
+        )
+    return entry.version.split(".")
+
+
+def _versioned_aliases(entry: ToolchainEntry, search_path: str) -> dict[str, str]:
+    """Return PATH aliases backed by installed, distinctly named RPM binaries."""
+    version_parts = _version_parts(entry)
+
+    if entry.name == "node":
+        suffix = version_parts[0]
+        aliases = ("node", "npm", "npx")
+        return {
+            alias: target
+            for alias in aliases
+            if (target := shutil.which(f"{alias}-{suffix}", path=search_path)) is not None
+        }
+
+    if entry.name == "python" and len(version_parts) >= 2:
+        executable = shutil.which(
+            f"python{version_parts[0]}.{version_parts[1]}", path=search_path
+        )
+        if executable is not None:
+            return {"python": executable, "python3": executable}
+
+    return {}
+
+
+@contextlib.contextmanager
+def activate(entries: Sequence[ToolchainEntry]) -> Iterator[None]:
+    """Activate installed RPM-native toolchain versions for one pipeline run.
+
+    The process-wide PATH change is safe because Gorget runs pipelines
+    synchronously. Child processes, including scripts that use ``env node``,
+    inherit the selected toolchain. The original PATH and temporary aliases are
+    restored when the pipeline finishes or fails.
+    """
+    original_path = os.environ.get("PATH")
+    search_path = original_path if original_path is not None else os.defpath
+    targets: dict[str, str] = {}
+
+    for entry in entries:
+        for alias, target in _versioned_aliases(entry, search_path).items():
+            previous = targets.get(alias)
+            if previous is not None and previous != target:
+                raise GorgetConfigError(
+                    f"Conflicting toolchain requirements select different {alias!r} "
+                    f"executables: {previous!r} and {target!r}"
+                )
+            targets[alias] = target
+
+    if not targets:
+        yield
+        return
+
+    with tempfile.TemporaryDirectory(prefix="gorget-toolchain-") as tmp_dir:
+        shim_dir = Path(tmp_dir)
+        for alias, target in targets.items():
+            (shim_dir / alias).symlink_to(target)
+            logger.debug("toolchain alias: %s -> %s", alias, target)
+
+        os.environ["PATH"] = f"{shim_dir}{os.pathsep}{search_path}"
+        try:
+            yield
+        finally:
+            if original_path is None:
+                os.environ.pop("PATH", None)
+            else:
+                os.environ["PATH"] = original_path
 
 
 def _version_matches(declared: str, active: str) -> bool:
@@ -51,13 +133,13 @@ def _version_matches(declared: str, active: str) -> bool:
 
 def verify_installed(entries: Sequence[ToolchainEntry]) -> None:
     for entry in entries:
+        _version_parts(entry)
         check = _VERSION_CHECKS.get(entry.name)
         if check is None:
             raise GorgetConfigError(
                 f"Unknown toolchain name: {entry.name!r} (supported: "
-                f"{sorted(_VERSION_CHECKS)}). gorget only validates an "
-                f"already-installed version -- it doesn't fetch or switch "
-                f"toolchain versions (see HUM-4990/HUM-4789)."
+                f"{sorted(_VERSION_CHECKS)}). gorget only uses already-installed "
+                f"toolchains and never downloads them."
             )
         cmd, pattern = check
         try:
@@ -85,15 +167,13 @@ def verify_installed(entries: Sequence[ToolchainEntry]) -> None:
         if not _version_matches(entry.version, active_version):
             raise GorgetConfigError(
                 f"Required toolchain {entry.name}@{entry.version} does not match the "
-                f"installed version ({active_version}). gorget validates against "
-                f"whatever is already installed -- it doesn't fetch or switch "
-                f"toolchain versions (see HUM-4990/HUM-4789)."
+                f"active version ({active_version}). No matching installed RPM "
+                f"toolchain could be activated; gorget never downloads toolchains."
             )
 
 
 def wrap_command(cmd: list[str], entries: Sequence[ToolchainEntry]) -> list[str]:
-    # No-op: there is no version-switching mechanism (see module docstring).
-    # Kept as a real seam so the eventual RPM-native mechanism drops in here
-    # without touching any of its call sites in fetch/vendor/*.py or
-    # transform/*.py.
+    # Activation is pipeline-scoped so child processes also inherit it. Keep
+    # this compatibility seam for handlers that already route commands through
+    # it; direct command rewriting would not affect scripts using `env node`.
     return cmd

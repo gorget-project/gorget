@@ -60,8 +60,8 @@ transform:
     files: ["setup-demo-repo.sh"]
     output: "demo-packaging-scripts.tar.gz"
 
-# toolchain: only *validates* against whatever's already installed -- it
-# never fetches or switches versions (see gorget/toolchain.py). Uncomment
+# Go has no parallel-installable command convention, so this declaration
+# validates whatever is already installed. Gorget never downloads tools. Uncomment
 # and set `version:` to your own `go version` output (setup-demo-repo.sh
 # prints the exact value) to see it pass; use a wrong version to see it fail
 # closed instead. See README.md section 4.

@@ -158,6 +158,38 @@ def test_toolchain_verified_even_under_dry_run(tmp_path, mocker):
         PipelineRunner(ctx, spec).run()
 
 
+def test_rpm_toolchain_activation_applies_to_pipeline_stages(tmp_path, monkeypatch, mocker):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, version in (("node", "v22.0.0"), ("node-24", "v24.18.1")):
+        executable = bin_dir / name
+        executable.write_text(f"#!/bin/sh\nprintf '%s\\n' '{version}'\n")
+        executable.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    active_versions = []
+
+    class NodeStage:
+        name: ClassVar[str] = "node"
+
+        def run(self, ctx, spec, state):
+            result = subprocess.run(["node", "--version"], capture_output=True, text=True)
+            active_versions.append(result.stdout.strip())
+            return StageResult(name=self.name, status="success")
+
+    mocker.patch("gorget.pipeline.runner.STAGE_ORDER", [NodeStage])
+    spec = PipelineSpec(
+        toolchain=ToolchainSection(entries=[ToolchainEntry(name="node", version="24")])
+    )
+
+    PipelineRunner(make_ctx(tmp_path), spec).run()
+
+    assert active_versions == ["v24.18.1"]
+    assert subprocess.run(
+        ["node", "--version"], capture_output=True, text=True
+    ).stdout.strip() == "v22.0.0"
+
+
 def test_fetch_stage_runs_for_real_and_populates_report_artifacts(tmp_path, mocker):
     mocker.patch(
         "gorget.fetch.spec_source.download_to",

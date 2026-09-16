@@ -376,22 +376,26 @@ toolchain:
 ```
 
 Declares per-package tool version requirements for `vendor`/`vendor-bump`/
-`build-ui`/`run` steps. **This currently only validates -- it never fetches
-or switches versions.** Before any stage runs (even under `--dry-run`),
-gorget checks the declared version against whatever's already installed
-(e.g. `go version`), matching component-wise (`1.22` matches an installed
-`1.22.3`), and fails closed on a mismatch or a missing tool. There is no
-mechanism to actually *activate* a non-default version yet.
+`build-ui`/`run` steps. Before any stage runs (even under `--dry-run`),
+gorget activates an installed RPM-native version when the distribution exposes
+one through a distinctly named executable, then validates it. Node.js uses
+`node-<major>` (and matching `npm-<major>`/`npx-<major>` when installed); Python
+uses `python<major>.<minor>`. The temporary aliases apply to the entire pipeline,
+including child scripts that use `/usr/bin/env`, and are removed afterward.
+
+Other tools currently validate the ambient executable (e.g. `go version`).
+Version matching is component-wise (`1.22` matches `1.22.3`), and a mismatch or
+missing tool fails closed. Gorget never installs or downloads a toolchain; the
+required RPM must already be present in the execution image.
 
 An earlier design shelled out to [`mise`](https://mise.jdx.dev/) to activate
 an already-installed version on demand, but that was rejected: mise's job is
 downloading toolchain binaries directly from their own upstream release
 channels at runtime, which reintroduces exactly the kind of untrusted-source
 problem gorget exists to eliminate for source tarballs, just one layer up.
-The real mechanism needs to be RPM-native with zero mid-pipeline network
-dependency (e.g. distinctly-named versioned binaries, the same pattern
-Fedora already uses for `python3.9`/`python3.11`/`python3.12`) -- see
-HUM-4990/HUM-4789 for the ongoing discussion.
+Activation is instead RPM-native with zero mid-pipeline network dependency,
+using the same distinctly named binary pattern Fedora already uses for
+`python3.9`/`python3.11`/`python3.12` and Hummingbird uses for Node.js.
 
 ## CLI flags
 

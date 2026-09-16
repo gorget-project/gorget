@@ -63,10 +63,8 @@ def test_fetch_stage_leaves_source_dir_none_without_git_step(tmp_path):
 
 
 def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mocker):
-    # toolchain activation isn't implemented yet (gorget/toolchain.py); the
-    # entries are threaded through but wrap_command() is currently a no-op.
-    # (FetchStage.run() itself never calls verify_installed() -- that only
-    # happens once, up front, in PipelineRunner.)
+    # Activation is pipeline-scoped; invoking a stage directly does not rewrite
+    # argv. PipelineRunner activates and validates before running any stage.
     mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
     mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
     mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)

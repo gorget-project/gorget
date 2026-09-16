@@ -99,10 +99,8 @@ def test_dispatches_pack_and_appends_artifact(tmp_path):
 
 
 def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
-    # toolchain activation isn't implemented yet (gorget/toolchain.py); the
-    # entries are threaded through but wrap_command() is currently a no-op.
-    # (TransformStage.run() itself never calls verify_installed() -- that
-    # only happens once, up front, in PipelineRunner.)
+    # Activation is pipeline-scoped; invoking a stage directly does not rewrite
+    # argv. PipelineRunner activates and validates before running any stage.
     mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()

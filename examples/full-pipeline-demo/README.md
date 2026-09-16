@@ -109,7 +109,7 @@ git checkout demo.source-pipeline.yaml   # revert
 Exit code 2, `error: Policy violation (1 check(s)): - [vendor-constraints]
 rsc.io/quote: rsc.io/quote is v1.5.2, need >= 9.9.9 (...)`.
 
-## 5. `toolchain:` -- validates, doesn't fetch or switch
+## 5. `toolchain:` -- validates ambient Go
 
 `demo.source-pipeline.yaml` has a commented-out `toolchain:` section near
 the bottom. `setup-demo-repo.sh` prints your machine's actual installed
@@ -128,15 +128,13 @@ doesn't match (e.g. `1.22.0`) and it fails closed instead, before any stage
 runs (even under `--dry-run`):
 
 ```
-error: Required toolchain go@1.22.0 does not match the installed version
-(1.25.10). gorget validates against whatever is already installed -- it
-doesn't fetch or switch toolchain versions (see HUM-4990/HUM-4789).
+error: Required toolchain go@1.22.0 does not match the active version
+(1.25.10). No matching installed RPM toolchain could be activated; gorget
+never downloads toolchains.
 ```
 
-That's the whole feature right now: a safety check against the ambient
-environment, nothing more. An earlier design shelled out to `mise` to
-actually *activate* arbitrary versions, but that was rejected as a
-supply-chain trust violation (mise downloads toolchain binaries from their
-own upstream release channels at runtime) -- see HUM-4990/HUM-4789 for the
-real multi-version mechanism this will eventually grow into. Comment the
-section back out (or match your real version) to get a working pipeline.
+Go RPMs currently expose only an unversioned command, so Go declarations are a
+safety check against the ambient environment. Node.js and Python declarations
+can activate parallel-installed, distinctly named RPM binaries. Gorget never
+downloads a toolchain. Comment the section back out (or match your real
+version) to get a working pipeline.
