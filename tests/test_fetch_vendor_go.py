@@ -111,8 +111,7 @@ def test_go_vendor_missing_config_file_behaves_like_no_package_dir(tmp_path, moc
 
 
 def test_go_vendor_toolchain_param_does_not_change_command(tmp_path, mocker):
-    # toolchain activation isn't implemented yet (gorget/toolchain.py); the
-    # param is accepted but wrap_command() is currently a no-op passthrough.
+    # Activation is pipeline-scoped, so a handler invoked directly keeps argv.
     mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
     GoVendor().vendor(tmp_path, toolchain=[ToolchainEntry(name="go", version="1.22.0")])
     assert mock_run.call_args_list == [

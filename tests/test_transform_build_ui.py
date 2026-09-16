@@ -84,8 +84,7 @@ def test_build_ui_custom_archive_name(tmp_path, mocker):
 
 
 def test_build_ui_toolchain_param_does_not_change_command(tmp_path, mocker):
-    # toolchain activation isn't implemented yet (gorget/toolchain.py); the
-    # param is accepted but wrap_command() is currently a no-op passthrough.
+    # Activation is pipeline-scoped, so a handler invoked directly keeps argv.
     source_dir = tmp_path / "src"
     source_dir.mkdir()
     mock_run = mocker.patch("gorget.transform.build_ui.run", side_effect=_fake_build_writes_dist)

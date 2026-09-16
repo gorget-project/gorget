@@ -95,9 +95,10 @@ def test_run_step_defaults():
 
 
 def test_toolchain_entry_fields():
-    entry = ToolchainEntry(name="go", version="1.22.0")
+    entry = ToolchainEntry(name="go", version="1.22", minimum_version="1.22.3")
     assert entry.name == "go"
-    assert entry.version == "1.22.0"
+    assert entry.version == "1.22"
+    assert entry.minimum_version == "1.22.3"
 
 
 def test_gpg_signature_step_requires_target_signature_keyring():

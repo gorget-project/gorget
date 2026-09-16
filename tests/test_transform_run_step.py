@@ -110,8 +110,7 @@ def test_run_uses_declared_path_as_cwd(tmp_path, mocker):
 
 
 def test_run_toolchain_param_does_not_change_command(tmp_path, mocker):
-    # toolchain activation isn't implemented yet (gorget/toolchain.py); the
-    # param is accepted but wrap_command() is currently a no-op passthrough.
+    # Activation is pipeline-scoped, so a handler invoked directly keeps argv.
     source_dir = tmp_path / "src"
     source_dir.mkdir()
     mock_run = mocker.patch(

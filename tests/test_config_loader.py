@@ -24,6 +24,7 @@ from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError
 
 FIXTURES = Path(__file__).parent / "fixtures" / "pipelines"
+EXAMPLES = Path(__file__).parents[1] / "examples"
 
 
 def make_vars():
@@ -82,6 +83,17 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert isinstance(spec.post.steps[0], PostRunStep)
     assert spec.post.steps[0].command == ["./generate-bundled-provides.py", "1.2.3"]
     assert spec.post.steps[0].artifacts == ["extra.tar.gz"]
+
+
+def test_full_pipeline_example_declares_node24_toolchain():
+    spec = build_pipeline_spec(
+        EXAMPLES / "full-pipeline-demo" / "demo.source-pipeline.yaml",
+        substitution_vars=make_vars(),
+    )
+
+    assert spec.toolchain.entries == [
+        ToolchainEntry(name="node", version="24", minimum_version="24.16")
+    ]
 
 
 def test_build_pipeline_spec_fetch_only():
