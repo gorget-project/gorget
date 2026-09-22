@@ -36,6 +36,6 @@ class PackHandler:
         pack_files(files, dest)
 
         description = f"pack:{', '.join(step.files)}"
-        state.artifacts.append(
+        state.add_derived_artifact(
             build_derived_artifact(dest, step.output, description, ctx.dry_run)
         )

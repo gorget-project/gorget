@@ -6,10 +6,11 @@ publication set and can contain replacements derived from those inputs.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from gorget.exceptions import GorgetConfigError
+from gorget.exceptions import GorgetConfigError, GorgetInternalError
 from gorget.pipeline.artifact import Artifact
 from gorget.pipeline.result import PipelineReport
 from gorget.pipeline.source import SourceWorkspace
@@ -43,9 +44,34 @@ class StageState:
                 return artifact
         raise GorgetConfigError(f"No acquired input artifact named {output_name!r}")
 
-    def add_input_artifacts(self, artifacts: list[Artifact]) -> None:
-        self.input_artifacts.extend(artifacts)
-        self.artifacts.extend(artifacts)
+    def add_input_artifacts(self, artifacts: Iterable[Artifact]) -> None:
+        additions = tuple(artifacts)
+        for artifact in additions:
+            if artifact.kind != "input":
+                raise GorgetInternalError(
+                    f"Acquisition produced non-input artifact {artifact.output_name!r}"
+                )
+        self._check_new_output_names(additions)
+        self.input_artifacts.extend(additions)
+        self.artifacts.extend(additions)
+
+    def add_derived_artifact(self, artifact: Artifact) -> None:
+        if artifact.kind != "derived":
+            raise GorgetInternalError(
+                f"Derivation produced input artifact {artifact.output_name!r}"
+            )
+        self._check_new_output_names((artifact,))
+        self.artifacts.append(artifact)
+
+    def add_derived_artifacts(self, artifacts: Iterable[Artifact]) -> None:
+        additions = tuple(artifacts)
+        for artifact in additions:
+            if artifact.kind != "derived":
+                raise GorgetInternalError(
+                    f"Derivation produced input artifact {artifact.output_name!r}"
+                )
+        self._check_new_output_names(additions)
+        self.artifacts.extend(additions)
 
     def replace_artifact(self, replacement: Artifact) -> None:
         for index, artifact in enumerate(self.artifacts):
@@ -55,3 +81,12 @@ class StageState:
         raise GorgetConfigError(
             f"Cannot replace missing artifact {replacement.output_name!r}"
         )
+
+    def _check_new_output_names(self, artifacts: Iterable[Artifact]) -> None:
+        seen = {artifact.output_name for artifact in self.artifacts}
+        for artifact in artifacts:
+            if artifact.output_name in seen:
+                raise GorgetConfigError(
+                    f"Duplicate artifact output name {artifact.output_name!r}"
+                )
+            seen.add(artifact.output_name)

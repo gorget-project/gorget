@@ -34,7 +34,7 @@ class BuildUiHandler:
                 )
             repack_tar_gz(output_dir, archive_path)
 
-        state.artifacts.append(
+        state.add_derived_artifact(
             build_derived_artifact(
                 archive_path,
                 archive_name,

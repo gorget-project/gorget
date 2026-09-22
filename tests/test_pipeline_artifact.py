@@ -1,4 +1,11 @@
-from gorget.pipeline.artifact import build_derived_artifact, build_input_artifact
+import pytest
+
+from gorget.exceptions import GorgetConfigError
+from gorget.pipeline.artifact import (
+    build_derived_artifact,
+    build_input_artifact,
+    derived_artifact_path,
+)
 
 
 def test_build_input_artifact_records_acquisition(tmp_path):
@@ -28,3 +35,9 @@ def test_build_derived_artifact_records_parent_identity(tmp_path):
 
     assert artifact.kind == "derived"
     assert artifact.parents == (parent.ref(),)
+
+
+@pytest.mark.parametrize("output_name", ["", ".", "..", "../escape.tar.gz", "/tmp/x"])
+def test_derived_artifact_path_rejects_non_filename_outputs(tmp_path, output_name):
+    with pytest.raises(GorgetConfigError, match="must be a filename"):
+        derived_artifact_path(tmp_path, "run", output_name)

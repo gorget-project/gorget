@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from gorget.constants import CHECKSUM_ALGO
+from gorget.exceptions import GorgetConfigError
 from gorget.util.checksum import compute_digest
 
 ArtifactKind = Literal["input", "derived"]
@@ -15,7 +16,16 @@ ArtifactKind = Literal["input", "derived"]
 
 def derived_artifact_path(work_dir: Path, producer: str, output_name: str) -> Path:
     """Return a path in the derivation namespace for a publication artifact."""
+    _validate_output_name(output_name)
     return work_dir / "_derived" / producer / output_name
+
+
+def _validate_output_name(output_name: str) -> None:
+    path = Path(output_name)
+    if not output_name or path.name != output_name or output_name in {".", ".."}:
+        raise GorgetConfigError(
+            f"Artifact output name must be a filename, got {output_name!r}"
+        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -50,6 +60,7 @@ def _build_artifact(
     version_change_eligible: bool = False,
     allow_version_change: bool = False,
 ) -> Artifact:
+    _validate_output_name(output_name)
     checksum = None if dry_run else compute_digest(path, CHECKSUM_ALGO)
     return Artifact(
         path=path,

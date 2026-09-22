@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from gorget.config.schema import StripTarballStep
-from gorget.exceptions import GorgetConfigError
+from gorget.exceptions import GorgetConfigError, GorgetInternalError
 from gorget.pipeline.artifact import (
     Artifact,
     build_derived_artifact,
@@ -28,7 +28,7 @@ class StripTarballHandler:
         removed_paths = _remove_paths(extract_dir, step.paths)
 
         if target.checksum is None:
-            raise AssertionError("non-dry-run artifacts must have a checksum")
+            raise GorgetInternalError("Non-dry-run artifact has no checksum")
         new_path = derived_artifact_path(
             ctx.work_dir, f"strip-tarball/{target.checksum}", target.output_name
         )

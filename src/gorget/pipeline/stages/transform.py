@@ -34,7 +34,7 @@ class _VendorStepAdapter:
 
     def run(self, step: VendorStep, ctx: TransformContext, state: StageState) -> None:
         artifacts: list[Artifact] = _vendor_handler.run(step, ctx)
-        state.artifacts.extend(artifacts)
+        state.add_derived_artifacts(artifacts)
         if step.sync_go_modules:
             state.source.mark_dirty()
 

@@ -29,6 +29,12 @@ class GorgetConfigError(GorgetError):
     exit_code = 1
 
 
+class GorgetInternalError(GorgetError):
+    """A pipeline invariant failed due to a gorget defect. Exit 1."""
+
+    exit_code = 1
+
+
 class GorgetTransientError(GorgetError):
     """Download failure, missing external tool, subprocess failure, network error.
 

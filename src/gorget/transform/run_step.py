@@ -60,7 +60,7 @@ class RunHandler:
                 shutil.copyfile(output_path, dest)
 
             description = f"run:{' '.join(step.command)}"
-            state.artifacts.append(
+            state.add_derived_artifact(
                 build_derived_artifact(dest, archive_name, description, ctx.dry_run)
             )
 
@@ -101,6 +101,6 @@ class RunHandler:
             shutil.copyfile(src_path, dest)
 
             description = f"run:{' '.join(step.command)} (discovered)"
-            state.artifacts.append(
+            state.add_derived_artifact(
                 build_derived_artifact(dest, output_name, description, ctx.dry_run)
             )
