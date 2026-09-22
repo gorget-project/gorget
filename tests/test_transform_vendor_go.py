@@ -4,7 +4,7 @@ import pytest
 
 from gorget.config.schema import ToolchainEntry
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.fetch.vendor.go import GoVendor
+from gorget.transform.vendor.go import GoVendor
 
 _OFF = {"GOWORK": "off"}
 
@@ -14,7 +14,7 @@ def _ok(args=None):
 
 
 def test_go_vendor_runs_tidy_then_vendor_by_default(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     result = GoVendor().vendor(tmp_path)
     assert mock_run.call_args_list == [
         mocker.call(["go", "mod", "tidy"], cwd=tmp_path, env=_OFF),
@@ -31,7 +31,7 @@ def test_go_vendor_uses_go_work_vendor_in_workspace_mode(tmp_path, mocker):
     valid vendor command -- tidy doesn't apply in workspace mode either.
     """
     (tmp_path / "go.work").touch()
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     result = GoVendor().vendor(tmp_path)
     assert mock_run.call_args_list == [
         mocker.call(["go", "work", "vendor"], cwd=tmp_path, env=None)
@@ -49,7 +49,7 @@ def test_go_vendor_go_work_takes_priority_over_dependency_overrides_and_post_com
         '[archive]\npost_commands = [["echo", "done"]]\n'
         '[archive.dependency_overrides]\n"golang.org/x/text" = "v0.39.0"\n'
     )
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     GoVendor().vendor(tmp_path, package_dir=package_dir)
     assert mock_run.call_args_list == [
         mocker.call(["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path, env=None),
@@ -73,7 +73,7 @@ def test_go_vendor_forces_gowork_off_when_module_is_under_an_ancestor_workspace(
     (tmp_path / "go.work").touch()
     module_dir = tmp_path / "server"
     module_dir.mkdir()
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     GoVendor().vendor(module_dir)
     assert mock_run.call_args_list == [
         mocker.call(["go", "mod", "tidy"], cwd=module_dir, env=_OFF),
@@ -91,7 +91,7 @@ def test_go_vendor_use_workspace_false_forces_gowork_off_even_at_workspace_root(
     `module_dir`, not just in an ancestor.
     """
     (tmp_path / "go.work").touch()
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     GoVendor().vendor(tmp_path, use_workspace=False)
     assert mock_run.call_args_list == [
         mocker.call(["go", "mod", "tidy"], cwd=tmp_path, env=_OFF),
@@ -102,7 +102,7 @@ def test_go_vendor_use_workspace_false_forces_gowork_off_even_at_workspace_root(
 def test_go_vendor_missing_config_file_behaves_like_no_package_dir(tmp_path, mocker):
     package_dir = tmp_path / "pkg"
     package_dir.mkdir()
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     GoVendor().vendor(tmp_path, package_dir=package_dir)
     assert mock_run.call_args_list == [
         mocker.call(["go", "mod", "tidy"], cwd=tmp_path, env=_OFF),
@@ -112,7 +112,7 @@ def test_go_vendor_missing_config_file_behaves_like_no_package_dir(tmp_path, moc
 
 def test_go_vendor_toolchain_param_does_not_change_command(tmp_path, mocker):
     # Activation is pipeline-scoped, so a handler invoked directly keeps argv.
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     GoVendor().vendor(tmp_path, toolchain=[ToolchainEntry(name="go", version="1.22.0")])
     assert mock_run.call_args_list == [
         mocker.call(["go", "mod", "tidy"], cwd=tmp_path, env=_OFF),
@@ -122,7 +122,7 @@ def test_go_vendor_toolchain_param_does_not_change_command(tmp_path, mocker):
 
 def test_go_vendor_raises_on_vendor_failure(tmp_path, mocker):
     mocker.patch(
-        "gorget.fetch.vendor.go.run",
+        "gorget.transform.vendor.go.run",
         side_effect=[_ok(), subprocess.CompletedProcess([], 1, "", "go.mod not found")],
     )
     with pytest.raises(GorgetTransientError, match="go.mod not found"):
@@ -131,7 +131,7 @@ def test_go_vendor_raises_on_vendor_failure(tmp_path, mocker):
 
 def test_go_vendor_raises_on_tidy_failure(tmp_path, mocker):
     mocker.patch(
-        "gorget.fetch.vendor.go.run",
+        "gorget.transform.vendor.go.run",
         return_value=subprocess.CompletedProcess([], 1, "", "tidy exploded"),
     )
     with pytest.raises(GorgetTransientError, match="tidy exploded"):
@@ -160,7 +160,7 @@ class TestGoVendorToolsConfig:
             package_dir,
             '[archive.dependency_overrides]\n"golang.org/x/text" = "v0.39.0"\n',
         )
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         GoVendor().vendor(tmp_path, package_dir=package_dir)
         assert mock_run.call_args_list == [
             mocker.call(["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path, env=_OFF),
@@ -175,7 +175,7 @@ class TestGoVendorToolsConfig:
             package_dir,
             '[archive]\npost_commands = [["cp", "-p", "a/LICENSE", "b/LICENSE"]]\n',
         )
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         GoVendor().vendor(tmp_path, package_dir=package_dir)
         assert mock_run.call_args_list == [
             mocker.call(["go", "mod", "tidy"], cwd=tmp_path, env=_OFF),
@@ -187,7 +187,7 @@ class TestGoVendorToolsConfig:
         package_dir = tmp_path / "pkg"
         package_dir.mkdir()
         self._config(package_dir, '[archive]\npre_commands = [["echo", "prep"]]\n')
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         GoVendor().vendor(tmp_path, package_dir=package_dir)
         assert mock_run.call_args_list == [
             mocker.call(["echo", "prep"], cwd=tmp_path, env=_OFF),
@@ -199,7 +199,7 @@ class TestGoVendorToolsConfig:
         package_dir = tmp_path / "pkg"
         package_dir.mkdir()
         self._config(package_dir, "[archive]\ntidy = false\n")
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         GoVendor().vendor(tmp_path, package_dir=package_dir)
         assert mock_run.call_args_list == [
             mocker.call(["go", "mod", "vendor"], cwd=tmp_path, env=_OFF)
@@ -210,7 +210,7 @@ class TestGoVendorToolsConfig:
         package_dir.mkdir()
         self._config(package_dir, '[archive]\npost_commands = [["false"]]\n')
         mocker.patch(
-            "gorget.fetch.vendor.go.run",
+            "gorget.transform.vendor.go.run",
             side_effect=[_ok(), _ok(), subprocess.CompletedProcess([], 1, "", "no such file")],
         )
         with pytest.raises(GorgetTransientError, match="no such file"):
@@ -241,7 +241,7 @@ class TestGomodPatchSync:
             '[archive]\npre_commands = [["go", "get", "golang.org/x/text@v0.39.0"]]\n'
         )
         self._spec_with_patch(package_dir, patch_touches_gomod=True)
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         GoVendor().vendor(tmp_path, package_dir=package_dir)
         assert mock_run.call_args_list[0] == mocker.call(
             ["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path, env=_OFF
@@ -254,7 +254,7 @@ class TestGomodPatchSync:
             '[archive]\npre_commands = [["go", "get", "golang.org/x/text@v0.39.0"]]\n'
         )
         self._spec_with_patch(package_dir, patch_touches_gomod=False)
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         with pytest.raises(GorgetConfigError, match="pre_commands or dependency_overrides"):
             GoVendor().vendor(tmp_path, package_dir=package_dir)
         mock_run.assert_not_called()
@@ -266,7 +266,7 @@ class TestGomodPatchSync:
             '[archive.dependency_overrides]\n"golang.org/x/text" = "v0.39.0"\n'
         )
         self._spec_with_patch(package_dir, patch_touches_gomod=False)
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         with pytest.raises(GorgetConfigError, match="pre_commands or dependency_overrides"):
             GoVendor().vendor(tmp_path, package_dir=package_dir)
         mock_run.assert_not_called()
@@ -278,7 +278,7 @@ class TestGomodPatchSync:
             '[archive.dependency_overrides]\n"golang.org/x/text" = "v0.39.0"\n'
         )
         self._spec_with_patch(package_dir, patch_touches_gomod=False)
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
 
         GoVendor().vendor(tmp_path, package_dir=package_dir, sync_go_modules=True)
 
@@ -293,7 +293,7 @@ class TestGomodPatchSync:
             '[archive]\npre_commands = [["echo", "prep"]]\n'
         )
         (package_dir / "pkg.spec").write_text("Name: pkg\n")
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         GoVendor().vendor(tmp_path, package_dir=package_dir)
         assert mock_run.call_args_list[0] == mocker.call(["echo", "prep"], cwd=tmp_path, env=_OFF)
 
@@ -306,7 +306,7 @@ class TestGomodPatchSync:
         (package_dir / "go-vendor-tools.toml").write_text(
             '[archive]\npre_commands = [["go", "get", "golang.org/x/text@v0.39.0"]]\n'
         )
-        mock_run = mocker.patch("gorget.fetch.vendor.go.run", return_value=_ok())
+        mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
         GoVendor().vendor(tmp_path, package_dir=package_dir)
         assert mock_run.call_args_list[0] == mocker.call(
             ["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path, env=_OFF

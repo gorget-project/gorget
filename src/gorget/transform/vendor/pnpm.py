@@ -1,3 +1,5 @@
+"""Generate pnpm vendor trees."""
+
 from __future__ import annotations
 
 import shutil

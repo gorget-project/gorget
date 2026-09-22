@@ -3,7 +3,7 @@
 A `git` fetch step archives `Source0` from the source workspace before a
 transform can mutate it. Any later step that rewrites `go.mod`/`go.sum` in
 that workspace -- `go-vendor-tools.toml`'s `pre_commands`/
-`dependency_overrides` (see `fetch/vendor/go.py`), or a `transform: vendor-bump`
+`dependency_overrides` (see `transform/vendor/go.py`), or a `transform: vendor-bump`
 step (see `transform/vendor_bump.py`) -- only affects the vendor archive, never
 the plain source tarball. Without an equivalent spec patch, the actual build
 tree (Source0 + patches) and the generated vendor archive end up requiring

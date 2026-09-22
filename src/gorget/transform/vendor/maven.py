@@ -1,4 +1,4 @@
-"""Vendor Maven dependencies into a project-local repository."""
+"""Generate a project-local Maven dependency repository."""
 
 from __future__ import annotations
 

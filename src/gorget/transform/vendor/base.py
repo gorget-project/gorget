@@ -33,7 +33,7 @@ class VendorEcosystem(Protocol):
 
         `package_dir` is the RPM package directory (containing the spec,
         go-vendor-tools.toml, etc.) -- distinct from `module_dir`, the freshly
-        fetched upstream checkout being vendored. Only the `go` ecosystem
+        acquired upstream checkout being vendored. Only the `go` ecosystem
         currently uses it (to read go-vendor-tools.toml); other ecosystems
         accept and ignore it.
 

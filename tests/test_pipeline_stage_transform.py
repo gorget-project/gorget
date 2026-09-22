@@ -149,7 +149,7 @@ def test_dispatches_pack_and_appends_artifact(tmp_path):
 def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
     # Activation is pipeline-scoped; invoking a stage directly does not rewrite
     # argv. PipelineRunner activates and validates before running any stage.
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
@@ -158,7 +158,7 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
         (cwd / "vendor" / "modules.txt").write_text("x v1")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", side_effect=fake_go_vendor)
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_go_vendor)
 
     ctx = make_run_ctx(tmp_path)
     state = make_state(tmp_path / "work", source_dir=source_dir)
@@ -208,8 +208,8 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
             (cwd / "vendor" / "modules.txt").write_text("x v0.39.0\n")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    mocker.patch("gorget.fetch.vendor.go.run", side_effect=fake_go_vendor)
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_go_vendor)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     mocker.patch("gorget.pipeline.source.commit_timestamp", return_value=1700000000)
     ctx = make_run_ctx(package_dir)
     state = make_state(tmp_path / "work", artifacts=[artifact], source_dir=source_dir)

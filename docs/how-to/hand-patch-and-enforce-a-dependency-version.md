@@ -70,7 +70,7 @@ compute that patch offline the same way you would for a CVE backport
 (`go mod edit`/`go mod tidy` against a pristine clone), since Konflux builds
 are hermetic and `%prep` can't re-run those commands itself. This is exactly
 what broke `trivy` for real, via the equivalent `go-vendor-tools.toml`
-`pre_commands` mechanism -- see `gorget/fetch/vendor/gomod_patch_sync.py`'s
+`pre_commands` mechanism -- see `gorget/transform/vendor/gomod_patch_sync.py`'s
 module docstring for the full mechanism, which is identical for both.
 
 When a package uses `go-vendor-tools.toml` dependency overrides, it can instead

@@ -10,16 +10,16 @@ from typing import cast
 
 from gorget.config.schema import ToolchainEntry, VendorPlatform, VendorStep
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.vendor.base import VendorEcosystem, VendorRunContext
-from gorget.fetch.vendor.cargo import CargoVendor
-from gorget.fetch.vendor.combine import combine_vendor_archives
-from gorget.fetch.vendor.composer import ComposerVendor
-from gorget.fetch.vendor.go import GoVendor
-from gorget.fetch.vendor.maven import MavenVendor
-from gorget.fetch.vendor.npm import NpmVendor
-from gorget.fetch.vendor.pnpm import PnpmVendor
-from gorget.fetch.vendor.yarn import YarnVendor
 from gorget.pipeline.artifact import Artifact, build_derived_artifact, derived_artifact_path
+from gorget.transform.vendor.base import VendorEcosystem, VendorRunContext
+from gorget.transform.vendor.cargo import CargoVendor
+from gorget.transform.vendor.combine import combine_vendor_archives
+from gorget.transform.vendor.composer import ComposerVendor
+from gorget.transform.vendor.go import GoVendor
+from gorget.transform.vendor.maven import MavenVendor
+from gorget.transform.vendor.npm import NpmVendor
+from gorget.transform.vendor.pnpm import PnpmVendor
+from gorget.transform.vendor.yarn import YarnVendor
 from gorget.util.git import commit_timestamp
 
 _ECOSYSTEMS: dict[str, VendorEcosystem] = {

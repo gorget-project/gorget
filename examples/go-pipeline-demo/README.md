@@ -25,7 +25,7 @@ vendor archive and the real build tree would require different versions of
 the same dependency -- `go build -mod=vendor` rejects that as inconsistent
 vendoring. gorget fails closed on this before vendoring runs (see
 [Hand-patch a vendored dependency, and stop it from regressing](../../docs/how-to/hand-patch-and-enforce-a-dependency-version.md)
-and `gorget/fetch/vendor/gomod_patch_sync.py`); remove `Patch0` to see it.
+and `gorget/transform/vendor/gomod_patch_sync.py`); remove `Patch0` to see it.
 
 ## 1. Set up the demo repo (once)
 

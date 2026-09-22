@@ -28,10 +28,10 @@ from typing import ClassVar
 from gorget.config.schema import BundledProvidesStep, PipelineSpec, PostRunStep
 from gorget.context import RunContext
 from gorget.exceptions import GorgetTransientError
-from gorget.fetch.vendor.lockfile import parse_bundled_provides
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
+from gorget.transform.vendor.lockfile import parse_bundled_provides
 from gorget.util.subprocess_run import run
 from gorget.util.version import rpm_version
 

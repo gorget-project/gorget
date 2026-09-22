@@ -15,7 +15,6 @@ from gorget.config.schema import (
     VendorStep,
 )
 from gorget.context import RunContext
-from gorget.fetch.vendor import VendorHandler
 from gorget.pipeline.artifact import Artifact
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
@@ -24,6 +23,7 @@ from gorget.transform.build_ui import BuildUiHandler
 from gorget.transform.pack import PackHandler
 from gorget.transform.run_step import RunHandler
 from gorget.transform.strip_tarball import StripTarballHandler
+from gorget.transform.vendor import VendorHandler
 from gorget.transform.vendor_bump import VendorBumpHandler
 
 _vendor_handler = VendorHandler()

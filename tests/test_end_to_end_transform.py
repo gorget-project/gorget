@@ -79,12 +79,12 @@ def _fake_run(calls):
 
 def test_git_fetch_then_vendor_bump_then_vendor(tmp_path, mocker):
     mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     calls = []
     fake_run = _fake_run(calls)
     mocker.patch("gorget.fetch.git.run", side_effect=fake_run)
     mocker.patch("gorget.transform.vendor_bump.run", side_effect=fake_run)
-    mocker.patch("gorget.fetch.vendor.go.run", side_effect=fake_run)
+    mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_run)
     # This test mocks the package-manager calls, so the real resolver can't see
     # a bumped version -- disable skip-check/post-verify to keep it focused on
     # stage wiring (bump runs before vendor, artifacts produced).
