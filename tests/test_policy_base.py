@@ -3,19 +3,10 @@ from pathlib import Path
 from gorget.config.schema import (
     PipelineSpec,
     TransformSection,
-    UrlStep,
     VendorModule,
     VendorStep,
 )
-from gorget.policy.base import VendoredModule, discover_vendored_modules
-
-
-def test_discover_vendored_modules_from_fetch():
-    spec = PipelineSpec(
-        fetch=[UrlStep(url="https://example.com/x.tar.gz"), VendorStep(ecosystem="go")]
-    )
-    modules = discover_vendored_modules(spec, Path("/src"))
-    assert modules == [VendoredModule(ecosystem="go", path=Path("/src/."))]
+from gorget.policy.base import discover_vendored_modules
 
 
 def test_discover_vendored_modules_from_transform():
@@ -29,16 +20,18 @@ def test_discover_vendored_modules_from_transform():
 
 def test_discover_vendored_modules_multi_submodule():
     spec = PipelineSpec(
-        fetch=[
-            VendorStep(
-                ecosystem="go",
-                modules=[
-                    VendorModule(path="server"),
-                    VendorModule(path="etcdctl"),
-                    VendorModule(path="etcdutl"),
-                ],
-            )
-        ]
+        transform=TransformSection(
+            steps=[
+                VendorStep(
+                    ecosystem="go",
+                    modules=[
+                        VendorModule(path="server"),
+                        VendorModule(path="etcdctl"),
+                        VendorModule(path="etcdutl"),
+                    ],
+                )
+            ]
+        )
     )
     modules = discover_vendored_modules(spec, Path("/src"))
     assert [m.path for m in modules] == [
@@ -50,5 +43,5 @@ def test_discover_vendored_modules_multi_submodule():
 
 
 def test_discover_vendored_modules_none_when_no_vendor_step():
-    spec = PipelineSpec(fetch=[UrlStep(url="https://example.com/x.tar.gz")])
+    spec = PipelineSpec()
     assert discover_vendored_modules(spec, Path("/src")) == []

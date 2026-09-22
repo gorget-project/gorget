@@ -1,9 +1,4 @@
-"""`FetchStage`: dispatches each `fetch:` step to its handler in declared order.
-
-Step order is exactly YAML list order -- a `spec-update` step naturally runs before
-any later `spec-source` step just because it appears first, and a `vendor` step
-picks up `FetchContext.source_dir` set by an earlier `git` step in the same list.
-"""
+"""`FetchStage`: acquire pipeline inputs in declared order."""
 
 from __future__ import annotations
 
@@ -16,16 +11,13 @@ from gorget.config.schema import (
     SpecSourceStep,
     SpecUpdateStep,
     UrlStep,
-    VendorStep,
 )
 from gorget.context import RunContext
-from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchContext
 from gorget.fetch.git import GitHandler
 from gorget.fetch.spec_source import SpecSourceHandler
 from gorget.fetch.spec_update import SpecUpdateHandler
 from gorget.fetch.url import UrlHandler
-from gorget.fetch.vendor import VendorHandler
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 
@@ -41,7 +33,6 @@ _HANDLERS: dict[type, Any] = {
     SpecSourceStep: SpecSourceHandler(),
     UrlStep: UrlHandler(),
     GitStep: GitHandler(),
-    VendorStep: VendorHandler(),
 }
 
 logger = logging.getLogger("gorget.pipeline")
@@ -60,11 +51,6 @@ class FetchStage:
             toolchain=spec.toolchain.entries,
         )
         for step in spec.fetch:
-            if isinstance(step, VendorStep) and step.sync_go_modules:
-                raise GorgetConfigError(
-                    "sync-go-modules must be used on a transform vendor step so "
-                    "Gorget can repack the synchronized Source0 archive"
-                )
             handler = _HANDLERS[type(step)]
             logger.debug("fetch step: %s", step)
             source_dir_before = fetch_ctx.source_dir

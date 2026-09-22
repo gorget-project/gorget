@@ -24,9 +24,8 @@ class FetchContext:
     spec: SpecFile
     vars: SubstitutionVars
     dry_run: bool
-    # Set by a `git` step after cloning, so a later `vendor` step in the same
-    # fetch list knows which checkout to vendor against (e.g. the etcd
-    # multi-submodule case: git-fetch the repo, then vendor several subdirs of it).
+    # Set by a `git` step after cloning so FetchStage can retain the checkout as
+    # the source workspace for later derivation.
     source_dir: Path | None = None
     toolchain: list[ToolchainEntry] = field(default_factory=list)
 

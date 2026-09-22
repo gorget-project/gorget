@@ -6,7 +6,7 @@ intermediate lookaside cache), applies transforms, verifies integrity,
 enforces dependency policy, and emits lookaside-ready artifacts.
 
 It's a plain CLI tool, installed like any other build dependency (e.g. via
-RPM) and invoked directly -- its `fetch:`/`vendor:` steps already run
+RPM) and invoked directly -- its acquisition and derivation steps already run
 untrusted third-party code the same way `go-vendor-tools`, `npm`, `cargo`, and Maven do,
 so it doesn't need or get container isolation those tools don't have either.
 
@@ -65,7 +65,6 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `spec-source` | Download the spec's `Source0`/`SourceN` URLs (macro-resolved), by index or all |
 | `url` | Download an explicit URL not declared in the spec |
 | `git` | Clone a repo at a tag/branch/commit (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
-| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm) |
 
 `git` (or another real fetch step) is mandatory for a **native package** (no
 Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
@@ -87,6 +86,7 @@ fetch:
     subdir: null                  # archive just this subdir of the checkout
     archive_name: "${PACKAGE}-${VERSION}.tar.gz"  # default shown; optional
 
+transform:
   - type: vendor
     ecosystem: cargo              # go | npm | cargo | composer | maven
     archive_name: "${PACKAGE}-${VERSION}-vendor.tar.xz"  # see note below
@@ -138,7 +138,7 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 |---|---|
 | `strip-tarball` | Remove paths (glob patterns) from a fetched tarball and repack it |
 | `vendor-bump` | Bump a vendored dependency (direct **or** nested transitive) to a minimum or series-capped version (Go/npm/pnpm/yarn/Cargo/Maven), before a later `vendor` step re-vendors. Transitive deps are forced via the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm.overrides`, yarn `resolutions`, cargo `--precise`). Plain `version: "0.39.0"` means `>=0.39.0` (no upper bound); tilde `version: "~4.18.2"` means `>=4.18.2` capped to the `4.18.x` series |
-| `vendor` | Same step as `fetch:`'s `vendor` (reused) -- lets `vendor-bump` run before vendoring, since `fetch:` always runs before `transform:` |
+| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive from the source workspace |
 | `build-ui` | Run `npm`/`yarn run <script>` and archive the build output directory |
 | `run` | Escape hatch: an arbitrary command, with declared output paths archived as new artifacts afterward |
 | `pack` | Archive an explicit list of files already in `--package-dir` into a single deterministic tarball, each at its own relative path |

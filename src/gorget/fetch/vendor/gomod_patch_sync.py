@@ -1,7 +1,8 @@
-"""Shared guardrail for gorget's `fetch: {git}` + Go vendoring architecture: a
-`git` fetch step archives `Source0` from the checkout *before* anything else
-gets a chance to mutate it, so any later step that rewrites `go.mod`/`go.sum`
-in that same checkout -- `go-vendor-tools.toml`'s `pre_commands`/
+"""Guardrail for gorget's acquisition and Go vendoring pipeline.
+
+A `git` fetch step archives `Source0` from the source workspace before a
+transform can mutate it. Any later step that rewrites `go.mod`/`go.sum` in
+that workspace -- `go-vendor-tools.toml`'s `pre_commands`/
 `dependency_overrides` (see `fetch/vendor/go.py`), or a `transform: vendor-bump`
 step (see `transform/vendor_bump.py`) -- only affects the vendor archive, never
 the plain source tarball. Without an equivalent spec patch, the actual build

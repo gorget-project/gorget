@@ -38,13 +38,11 @@ class VendoredModule:
 
 
 def discover_vendored_modules(spec: PipelineSpec, source_dir: Path) -> list[VendoredModule]:
-    """Every module a `vendor` step (in `fetch:` or `transform:`) actually vendored,
-    resolved against the working source tree. Reuses the pipeline's own already-typed
-    vendor declarations rather than re-deriving them from the filesystem -- exactly
-    mirroring how the `vendor` step itself resolved these paths.
+    """Every module a `vendor` transform actually vendored, resolved against the
+    source workspace. Reuses the pipeline's typed vendor declarations rather than
+    re-deriving them from the filesystem.
     """
-    vendor_steps = [step for step in spec.fetch if isinstance(step, VendorStep)]
-    vendor_steps += [step for step in spec.transform.steps if isinstance(step, VendorStep)]
+    vendor_steps = [step for step in spec.transform.steps if isinstance(step, VendorStep)]
 
     modules = []
     for step in vendor_steps:

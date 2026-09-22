@@ -41,7 +41,7 @@ def test_load_yaml_malformed_raises_config_error():
 def test_build_pipeline_spec_full_schema_round_trips():
     spec = build_pipeline_spec(FIXTURES / "full-schema.yaml", substitution_vars=make_vars())
     assert spec.package == "example"
-    assert len(spec.fetch) == 5
+    assert len(spec.fetch) == 4
     assert isinstance(spec.fetch[0], SpecUpdateStep)
     assert spec.fetch[0].reset_release == "1"
     assert spec.fetch[0].substitutions[0].replacement == "%global forgeurl https://example.com/example"
@@ -50,12 +50,11 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert spec.fetch[2].url == "https://example.com/example-1.2.3-extra.tar.gz"
     assert isinstance(spec.fetch[3], GitStep)
     assert spec.fetch[3].ref == "v1.2.3"
-    assert isinstance(spec.fetch[4], VendorStep)
-    assert spec.fetch[4].ecosystem == "go"
-
-    assert len(spec.transform.steps) == 1
-    assert isinstance(spec.transform.steps[0], StripTarballStep)
-    assert spec.transform.steps[0].paths == ["docs/"]
+    assert len(spec.transform.steps) == 2
+    assert isinstance(spec.transform.steps[0], VendorStep)
+    assert spec.transform.steps[0].ecosystem == "go"
+    assert isinstance(spec.transform.steps[1], StripTarballStep)
+    assert spec.transform.steps[1].paths == ["docs/"]
     assert len(spec.toolchain.entries) == 1
     assert spec.toolchain.entries[0].name == "go"
     assert spec.toolchain.entries[0].version == "1.22"
@@ -125,7 +124,7 @@ def test_build_pipeline_spec_vendor_multi_submodule():
     spec = build_pipeline_spec(
         FIXTURES / "vendor-multi-submodule.yaml", substitution_vars=make_vars()
     )
-    vendor_step = spec.fetch[1]
+    vendor_step = spec.transform.steps[0]
     assert isinstance(vendor_step, VendorStep)
     assert [m.path for m in vendor_step.modules] == ["server", "etcdctl", "etcdutl"]
     assert vendor_step.archive_name == "example-vendor.tar.gz"
@@ -134,6 +133,11 @@ def test_build_pipeline_spec_vendor_multi_submodule():
 def test_unknown_fetch_type_raises_config_error():
     with pytest.raises(GorgetConfigError, match="Unknown fetch step type"):
         build_pipeline_spec(FIXTURES / "unknown-fetch-type.yaml", substitution_vars=make_vars())
+
+
+def test_vendor_is_not_a_fetch_step():
+    with pytest.raises(GorgetConfigError, match="Unknown fetch step type: 'vendor'"):
+        parse_pipeline_spec({"fetch": [{"type": "vendor", "ecosystem": "go"}]})
 
 
 def test_transform_strip_tarball_step_parses():

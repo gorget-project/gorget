@@ -1,10 +1,4 @@
-"""`TransformStage`: dispatches each `transform:` step to its handler in declared
-order. `vendor` is reused from the Fetch stage's step/handler (see
-`fetch/vendor/base.py`'s `VendorRunContext`) so a pipeline can run `vendor-bump`
-then `vendor` under `transform:` in that order (edit lockfiles, then vendor --
-Fetch's own `vendor` step always runs before Transform and can't do that
-ordering itself).
-"""
+"""Derive source revisions and additional artifacts in declared order."""
 
 from __future__ import annotations
 
@@ -36,10 +30,7 @@ _vendor_handler = VendorHandler()
 
 
 class _VendorStepAdapter:
-    """Adapts the Fetch stage's `VendorHandler` (`run(step, ctx) ->
-    list[Artifact]`) to Transform's `run(step, ctx, state) -> None` shape,
-    so `VendorHandler` itself needs no changes to be reused here.
-    """
+    """Add `VendorHandler`'s returned artifacts to pipeline state."""
 
     def run(self, step: VendorStep, ctx: TransformContext, state: StageState) -> None:
         artifacts: list[Artifact] = _vendor_handler.run(step, ctx)

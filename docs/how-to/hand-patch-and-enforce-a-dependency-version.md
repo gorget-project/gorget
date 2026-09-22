@@ -53,9 +53,7 @@ pins:
 ```
 
 `vendor-bump` must come before the `vendor` step, and both belong in
-`transform:` (not `fetch:`) even though `vendor` is also a valid `fetch:`
-step type elsewhere -- `fetch:` always runs before `transform:`, so this is
-the only ordering that lets the pin's edit land before vendoring reads it.
+`transform:`. This ordering lets the pin's edit land before vendoring reads it.
 See [`go-pipeline-demo`](../../examples/go-pipeline-demo/) for this running
 against a real `go.mod`.
 

@@ -36,7 +36,7 @@ class TransformStepHandler(Protocol):
 
 def ensure_source_dir(ctx: TransformContext, state: StageState, target: str | None = None) -> Path:
     """Return the working source tree for steps that need one (vendor-bump,
-    vendor, build-ui, run). Reuses a `git` fetch step's checkout if one ran;
+    vendor, build-ui, run). Reuses the source workspace when one exists;
     otherwise extracts the sole fetched artifact, since there's no other way to
     guess which one to use if there's more than one (or none).
 

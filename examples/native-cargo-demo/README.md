@@ -7,14 +7,14 @@ none of that: there's no upstream tarball URL to declare in the first place,
 because nobody has ever cut one. `fetch: git` is mandatory here rather than
 one option among several -- there's no fallback fetch to skip it, and
 gorget's own output is the only place the source archive ever exists.
-`fetch: vendor` is on top of that for an unrelated reason: this particular
+`transform: vendor` is on top of that for an unrelated reason: this particular
 demo package has a real Cargo dependency to vendor -- the same reason any
 package, native or not, would need it.
 
 That doesn't mean the rest of the pipeline is off the table -- a native
 package can still have `transform:`/`verify:`/`policy:`/`post:` like any
 other. This example just doesn't need any of them, so it's stripped to the
-two `fetch:` steps this particular package actually needs. See
+acquisition and derivation steps this particular package needs. See
 [`go-pipeline-demo`](../go-pipeline-demo/) once you need more than this; this
 example is deliberately the floor, not the ceiling, and uses Cargo rather
 than Go to cover the one vendor ecosystem none of the other examples touch.
@@ -52,7 +52,7 @@ ls /tmp/gorget-native-cargo-output
 # fetch: git -- a real clone of the v1.0.0 tag, archived
 tar tzf /tmp/gorget-native-cargo-output/demo-1.0.0.tar.gz
 
-# fetch: vendor -- a real `cargo vendor` of itoa, archived
+# transform: vendor -- a real `cargo vendor` of itoa, archived
 tar tJf /tmp/gorget-native-cargo-output/demo-1.0.0-vendor.tar.xz | head
 
 cat /tmp/gorget-native-cargo-output/report.json
@@ -67,7 +67,7 @@ comments this inline, but concretely:
 | Step | Default `archive_name` | What this example sets instead |
 |---|---|---|
 | `fetch: git` | `${PACKAGE}-${VERSION}.tar.gz` | Same -- spelled out here just to show it's the default |
-| `fetch: vendor` | `${PACKAGE}-vendor.tar.gz` (no version, always gzip) | `${PACKAGE}-${VERSION}-vendor.tar.xz` |
+| `transform: vendor` | `${PACKAGE}-vendor.tar.gz` (no version, always gzip) | `${PACKAGE}-${VERSION}-vendor.tar.xz` |
 
 Nothing validates that your `archive_name` choices agree with what the spec
 file's `Source0`/`SourceN` declare -- get it wrong and the mismatch doesn't

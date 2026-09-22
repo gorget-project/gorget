@@ -9,7 +9,7 @@ repo:
 | `fetch: git` | Clones `demo-repo/` |
 | `transform: strip-tarball` | Removes `docs/` from the source tarball |
 | `transform: vendor-bump` | Bumps `rsc.io/quote` from `v1.0.0` to `v1.5.2` |
-| `transform: vendor` | Vendors the now-bumped dependency (reused from `fetch:`) |
+| `transform: vendor` | Vendors the now-bumped dependency |
 | `transform: build-ui` | Runs `npm run build` in `ui/`, archives `dist/` |
 | `transform: run` | Escape hatch: runs `go version`, archives the output file |
 | `transform: pack` | Packs `setup-demo-repo.sh` (already in `--package-dir`) into a deterministic archive |

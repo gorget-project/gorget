@@ -7,6 +7,7 @@ from gorget.config.schema import (
     LicenseComplianceSection,
     PipelineSpec,
     PolicySection,
+    TransformSection,
     VendorConstraintEntry,
     VendorModule,
     VendorStep,
@@ -71,7 +72,9 @@ def test_vendor_constraints_success(tmp_path):
     ctx = make_ctx(tmp_path)
     state = make_state(tmp_path, source_dir=tmp_path)
     spec = PipelineSpec(
-        fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
+        transform=TransformSection(
+            steps=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])]
+        ),
         policy=PolicySection(
             vendor_constraints=[
                 VendorConstraintEntry(
@@ -97,7 +100,9 @@ def test_vendor_constraints_failure_raises_policy_violation(tmp_path):
     ctx = make_ctx(tmp_path)
     state = make_state(tmp_path, source_dir=tmp_path)
     spec = PipelineSpec(
-        fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
+        transform=TransformSection(
+            steps=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])]
+        ),
         policy=PolicySection(
             vendor_constraints=[
                 VendorConstraintEntry(
@@ -120,7 +125,9 @@ def test_audit_go_mod_verify_fails_closed(tmp_path, mocker):
     ctx = make_ctx(tmp_path)
     state = make_state(tmp_path, source_dir=tmp_path)
     spec = PipelineSpec(
-        fetch=[VendorStep(ecosystem="go", modules=[VendorModule(path=".")])],
+        transform=TransformSection(
+            steps=[VendorStep(ecosystem="go", modules=[VendorModule(path=".")])]
+        ),
         policy=PolicySection(audit=True),
     )
     with pytest.raises(GorgetPolicyViolation, match="checksum mismatch"):
@@ -138,7 +145,9 @@ def test_audit_npm_warning_does_not_raise(tmp_path, mocker):
     ctx = make_ctx(tmp_path)
     state = make_state(tmp_path, source_dir=tmp_path)
     spec = PipelineSpec(
-        fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
+        transform=TransformSection(
+            steps=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])]
+        ),
         policy=PolicySection(audit=True),
     )
     result = PolicyStage().run(ctx, spec, state)
@@ -151,7 +160,9 @@ def test_license_compliance_failure_raises(tmp_path):
     ctx = make_ctx(tmp_path)
     state = make_state(tmp_path, source_dir=tmp_path)
     spec = PipelineSpec(
-        fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
+        transform=TransformSection(
+            steps=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])]
+        ),
         policy=PolicySection(
             license_compliance=LicenseComplianceSection(disallowed=["GPL-3.0-only"])
         ),
@@ -166,7 +177,9 @@ def test_multiple_failures_are_all_reported_together(tmp_path):
     ctx = make_ctx(tmp_path)
     state = make_state(tmp_path, source_dir=tmp_path)
     spec = PipelineSpec(
-        fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
+        transform=TransformSection(
+            steps=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])]
+        ),
         policy=PolicySection(
             vendor_constraints=[
                 VendorConstraintEntry(

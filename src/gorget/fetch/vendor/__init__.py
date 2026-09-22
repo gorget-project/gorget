@@ -1,9 +1,4 @@
-"""Generate dependency vendor archives for supported ecosystems.
-
-Reused by both the Fetch stage's `vendor` step and the Transform stage's `vendor`
-step (see `fetch/vendor/base.py`'s `VendorRunContext` for why this isn't typed
-against the concrete `FetchContext`).
-"""
+"""Generate dependency vendor archives from the source workspace."""
 
 from __future__ import annotations
 

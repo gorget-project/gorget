@@ -2,12 +2,9 @@ import subprocess
 from pathlib import Path
 from unittest.mock import Mock
 
-import pytest
-
-from gorget.config.schema import GitStep, PipelineSpec, ToolchainEntry, ToolchainSection, VendorStep
+from gorget.config.schema import GitStep, PipelineSpec
 from gorget.config.substitution import SubstitutionVars
 from gorget.context import RunContext
-from gorget.exceptions import GorgetConfigError
 from gorget.pipeline.result import PipelineReport
 from gorget.pipeline.stages.fetch import FetchStage
 from gorget.pipeline.state import StageState
@@ -60,48 +57,3 @@ def test_fetch_stage_leaves_source_dir_none_without_git_step(tmp_path):
     state = make_state(tmp_path / "work")
     FetchStage().run(ctx, PipelineSpec(), state)
     assert state.source.path is None
-
-
-def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mocker):
-    # Activation is pipeline-scoped; invoking a stage directly does not rewrite
-    # argv. PipelineRunner activates and validates before running any stage.
-    mocker.patch("gorget.fetch.git.commit_timestamp", return_value=1700000000)
-    mocker.patch("gorget.fetch.git.run", side_effect=_fake_clone)
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
-
-    def _fake_go_vendor(args, cwd=None, env=None):
-        (Path(cwd) / "vendor").mkdir(parents=True, exist_ok=True)
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
-
-    mock_go_run = mocker.patch("gorget.fetch.vendor.go.run", side_effect=_fake_go_vendor)
-
-    ctx = make_run_ctx(tmp_path)
-    state = make_state(tmp_path / "work")
-    spec = PipelineSpec(
-        fetch=[
-            GitStep(repo="https://example.com/repo.git", ref="v1.2.3"),
-            VendorStep(ecosystem="go"),
-        ],
-        toolchain=ToolchainSection(entries=[ToolchainEntry(name="go", version="1.22.0")]),
-    )
-
-    FetchStage().run(ctx, spec, state)
-
-    # `go mod tidy` runs before `go mod vendor` by default (matching
-    # go-vendor-tools' own default), even with no go-vendor-tools.toml present.
-    assert mock_go_run.call_args_list == [
-        mocker.call(["go", "mod", "tidy"], cwd=state.source.path, env={"GOWORK": "off"}),
-        mocker.call(["go", "mod", "vendor"], cwd=state.source.path, env={"GOWORK": "off"}),
-    ]
-
-
-def test_fetch_stage_rejects_sync_go_modules(tmp_path):
-    ctx = make_run_ctx(tmp_path)
-    state = make_state(tmp_path / "work")
-
-    with pytest.raises(GorgetConfigError, match="transform vendor step"):
-        FetchStage().run(
-            ctx,
-            PipelineSpec(fetch=[VendorStep(ecosystem="go", sync_go_modules=True)]),
-            state,
-        )

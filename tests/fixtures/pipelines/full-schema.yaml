@@ -15,11 +15,11 @@ fetch:
     repo: "https://example.com/example.git"
     ref: "v${VERSION}"
     shallow: true
+transform:
   - type: vendor
     ecosystem: go
     modules:
       - path: "."
-transform:
   - type: strip-tarball
     paths: ["docs/"]
 toolchain:

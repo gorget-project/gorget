@@ -100,7 +100,7 @@ class VendorStep:
     sync_go_modules: bool = False
 
 
-FetchStep = SpecUpdateStep | SpecSourceStep | UrlStep | GitStep | VendorStep
+FetchStep = SpecUpdateStep | SpecSourceStep | UrlStep | GitStep
 
 # type-key -> dataclass, used by config/loader.py to dispatch `fetch:` list items.
 FETCH_STEP_TYPES: dict[str, type] = {
@@ -108,7 +108,6 @@ FETCH_STEP_TYPES: dict[str, type] = {
     "spec-source": SpecSourceStep,
     "url": UrlStep,
     "git": GitStep,
-    "vendor": VendorStep,
 }
 
 
@@ -193,9 +192,8 @@ class RunStep:
     artifacts: list[str] = field(default_factory=list)
 
 
-# `vendor` is reused verbatim from the fetch schema: a `transform:` list can run
-# `vendor-bump` then `vendor` in order (edit lockfiles, then vendor) since Fetch's
-# own `vendor` step always runs before Transform and can't do that ordering itself.
+# Vendoring consumes a source workspace and creates a derived artifact, so it is
+# a transform step even when no earlier transform mutates the source.
 TransformStep = StripTarballStep | VendorBumpStep | BuildUiStep | RunStep | VendorStep | PackStep
 
 TRANSFORM_STEP_TYPES: dict[str, type] = {
