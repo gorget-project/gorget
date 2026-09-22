@@ -19,7 +19,7 @@ from gorget.exceptions import GorgetPolicyViolation
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 from gorget.policy.audit import run_audits
-from gorget.policy.base import CheckResult, discover_vendored_modules
+from gorget.policy.base import CheckResult
 from gorget.policy.license_compliance import check_license_compliance
 from gorget.policy.vendor_constraints import check_vendor_constraints
 
@@ -43,7 +43,7 @@ class PolicyStage:
             logger.warning("No policy configured for %s", ctx.vars.package)
             return StageResult(name=self.name, status="skipped", reason="no policy configured")
 
-        modules = discover_vendored_modules(spec, state.source_dir) if state.source_dir else []
+        modules = state.vendored_modules
 
         results: list[CheckResult] = []
         results += check_vendor_constraints(policy.vendor_constraints, modules)

@@ -1,3 +1,4 @@
+import shutil
 import tarfile
 from unittest.mock import Mock
 
@@ -59,10 +60,10 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
         },
     )
     step = VendorStep(ecosystem="go")
-    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+    result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
 
-    assert artifacts[0].output_name == "foo-vendor.tar.gz"
-    with tarfile.open(artifacts[0].path) as tar:
+    assert result.artifacts[0].output_name == "foo-vendor.tar.gz"
+    with tarfile.open(result.artifacts[0].path) as tar:
         names = tar.getnames()
     assert any(name.endswith("modules.txt") for name in names)
     assert "go.sum" in names
@@ -91,10 +92,10 @@ def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
             VendorModule(path="etcdctl", name="etcdctl"),
         ],
     )
-    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+    result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
 
-    assert artifacts[0].output_name == "etcd-vendor.tar.gz"
-    with tarfile.open(artifacts[0].path) as tar:
+    assert result.artifacts[0].output_name == "etcd-vendor.tar.gz"
+    with tarfile.open(result.artifacts[0].path) as tar:
         names = set(tar.getnames())
     assert any(n.endswith("server/server.txt") for n in names)
     assert any(n.endswith("etcdctl/etcdctl.txt") for n in names)
@@ -130,10 +131,10 @@ def test_vendor_archive_members_use_source_commit_timestamp(tmp_path, mocker):
         },
     )
     step = VendorStep(ecosystem="go")
-    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+    result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
 
     mock_commit_timestamp.assert_called_once_with(source_dir)
-    with tarfile.open(artifacts[0].path) as tar:
+    with tarfile.open(result.artifacts[0].path) as tar:
         members = tar.getmembers()
         mtimes = {member.mtime for member in members}
     assert mtimes == {1700000000}
@@ -161,22 +162,179 @@ def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
         },
     )
     step = VendorStep(ecosystem="go", archive_name="etcd-vendor.tar.bz2")
-    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+    result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
 
-    assert artifacts[0].output_name == "etcd-vendor.tar.bz2"
-    assert artifacts[0].path.read_bytes()[:3] == b"BZh"
-    with tarfile.open(artifacts[0].path, "r:bz2") as tar:
+    assert result.artifacts[0].output_name == "etcd-vendor.tar.bz2"
+    assert result.artifacts[0].path.read_bytes()[:3] == b"BZh"
+    with tarfile.open(result.artifacts[0].path, "r:bz2") as tar:
         names = tar.getnames()
     assert any(name.endswith("modules.txt") for name in names)
+
+
+def test_vendor_removes_generated_output_after_archiving(tmp_path, mocker):
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+
+    def fake_vendor(module_dir, *_args, **_kwargs):
+        vendor_dir = module_dir / "vendor"
+        vendor_dir.mkdir()
+        (vendor_dir / "dependency.txt").write_text("complete offline content")
+        return vendor_dir
+
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {
+            "go": Mock(
+                vendor=Mock(side_effect=fake_vendor),
+                archive_root_files=Mock(return_value=[]),
+            )
+        },
+    )
+
+    result = VendorHandler().run(
+        VendorStep(ecosystem="go"), make_ctx(tmp_path, source_dir=source_dir)
+    )
+    artifact = result.artifacts[0]
+
+    assert not (source_dir / "vendor").exists()
+    assert (result.modules[0].path / "vendor" / "dependency.txt").is_file()
+    with tarfile.open(artifact.path) as tar:
+        archived = tar.extractfile("vendor/dependency.txt")
+        assert archived is not None
+        assert archived.read() == b"complete offline content"
+
+
+def test_vendor_isolates_all_backend_changes_from_source(tmp_path, mocker):
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "manifest.txt").write_text("original")
+
+    def fake_vendor(module_dir, *_args, **_kwargs):
+        (module_dir / "manifest.txt").write_text("changed by backend")
+        (module_dir / "scratch").mkdir()
+        vendor_dir = module_dir / "vendor"
+        vendor_dir.mkdir()
+        return vendor_dir
+
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {
+            "go": Mock(
+                vendor=Mock(side_effect=fake_vendor),
+                archive_root_files=Mock(return_value=[]),
+            )
+        },
+    )
+
+    result = VendorHandler().run(
+        VendorStep(ecosystem="go"), make_ctx(tmp_path, source_dir=source_dir)
+    )
+
+    assert (source_dir / "manifest.txt").read_text() == "original"
+    assert not (source_dir / "scratch").exists()
+    assert (result.modules[0].path / "manifest.txt").read_text() == "changed by backend"
+    assert (result.modules[0].path / "scratch").is_dir()
+
+
+def test_vendor_removes_failed_disposable_workspace(tmp_path, mocker):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+
+    def fail_vendor(module_dir, *_args, **_kwargs):
+        (module_dir / "scratch").mkdir()
+        raise RuntimeError("vendor failed")
+
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {"go": Mock(vendor=Mock(side_effect=fail_vendor))},
+    )
+
+    with pytest.raises(RuntimeError, match="vendor failed"):
+        VendorHandler().run(
+            VendorStep(ecosystem="go"), make_ctx(tmp_path, source_dir=source_dir)
+        )
+
+    assert not (source_dir / "scratch").exists()
+    assert list(tmp_path.glob("_vendor_source-*")) == []
+
+
+def test_vendor_preserves_preexisting_output_directory(tmp_path, mocker):
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    source_dir = tmp_path / "src"
+    vendor_dir = source_dir / "vendor"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "upstream.txt").write_text("keep")
+
+    def fake_vendor(module_dir, *_args, **_kwargs):
+        return module_dir / "vendor"
+
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {
+            "go": Mock(
+                vendor=Mock(side_effect=fake_vendor),
+                archive_root_files=Mock(return_value=[]),
+            )
+        },
+    )
+
+    result = VendorHandler().run(
+        VendorStep(ecosystem="go"), make_ctx(tmp_path, source_dir=source_dir)
+    )
+
+    assert (vendor_dir / "upstream.txt").read_text() == "keep"
+    assert (result.modules[0].path / "vendor" / "upstream.txt").read_text() == "keep"
+
+
+def test_vendor_calls_ecosystem_cleanup_after_archiving(tmp_path, mocker):
+    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    store_dir = tmp_path / "temporary-store"
+    store_dir.mkdir()
+    (store_dir / "package.tgz").write_text("offline package")
+
+    class TemporaryVendor:
+        def __init__(self):
+            self.cleaned = []
+
+        def vendor(self, *_args, **_kwargs):
+            return store_dir
+
+        def archive_root_files(self, _module_dir):
+            return []
+
+        def cleanup(self, path):
+            self.cleaned.append(path)
+            shutil.rmtree(path)
+
+    ecosystem = TemporaryVendor()
+    mocker.patch(
+        "gorget.fetch.vendor._ECOSYSTEMS",
+        {"pnpm": ecosystem},
+    )
+
+    result = VendorHandler().run(
+        VendorStep(ecosystem="pnpm"), make_ctx(tmp_path, source_dir=source_dir)
+    )
+    artifact = result.artifacts[0]
+
+    assert ecosystem.cleaned == [store_dir]
+    assert not store_dir.exists()
+    with tarfile.open(artifact.path) as tar:
+        assert tar.extractfile("vendor/package.tgz").read() == b"offline package"
 
 
 def test_vendor_dry_run_skips_ecosystem_and_combine(tmp_path, mocker):
     mock_vendor = Mock()
     mocker.patch("gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
     step = VendorStep(ecosystem="go")
-    artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=tmp_path, dry_run=True))
+    result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=tmp_path, dry_run=True))
     mock_vendor.assert_not_called()
-    assert artifacts[0].checksum is None
+    assert result.artifacts[0].checksum is None
+    assert result.modules == ()
 
 
 def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
@@ -197,8 +355,12 @@ def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
     )
     step = VendorStep(ecosystem="go")
     toolchain = [ToolchainEntry(name="go", version="1.22.0")]
-    VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir, toolchain=toolchain))
-    mock_vendor.assert_called_once_with(source_dir / ".", toolchain, tmp_path, True, ())
+    result = VendorHandler().run(
+        step, make_ctx(tmp_path, source_dir=source_dir, toolchain=toolchain)
+    )
+    mock_vendor.assert_called_once_with(
+        result.modules[0].path, toolchain, tmp_path, True, ()
+    )
 
 
 def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
@@ -223,5 +385,5 @@ def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
         {"go": Mock(vendor=mock_vendor, archive_root_files=Mock(return_value=[]))},
     )
     step = VendorStep(ecosystem="go", modules=[VendorModule(path=".", use_workspace=False)])
-    VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
-    mock_vendor.assert_called_once_with(source_dir / ".", [], tmp_path, False, ())
+    result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
+    mock_vendor.assert_called_once_with(result.modules[0].path, [], tmp_path, False, ())

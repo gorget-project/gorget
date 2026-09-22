@@ -7,6 +7,7 @@ from pathlib import Path
 
 from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchedArtifact
+from gorget.fetch.vendor.base import VendoredModule
 from gorget.pipeline.result import PipelineReport
 from gorget.specfile import SpecFile
 
@@ -36,6 +37,9 @@ class StageState:
     # Set by a transform step that edits the shared source tree in place, to
     # request the end-of-stage repack above.
     source_dirty: bool = False
+    # Module workspaces produced by vendor steps and retained for PolicyStage.
+    # Policy must inspect what vendoring used, not infer paths from source_dir.
+    vendored_modules: list[VendoredModule] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # Same list object, not a copy: as FetchStage extends `artifacts`,
