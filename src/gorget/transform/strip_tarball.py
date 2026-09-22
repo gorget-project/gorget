@@ -1,6 +1,4 @@
-"""`strip-tarball` transform step: remove paths from a fetched tarball and repack
-it, preserving the tarball's original internal layout.
-"""
+"""Derive a filtered tarball without changing its input artifact."""
 
 from __future__ import annotations
 
@@ -23,11 +21,23 @@ class StripTarballHandler:
 
         extract_dir = ctx.work_dir / "_strip" / target.output_name
         extract_tar_gz(target.path, extract_dir)
-        _remove_paths(extract_dir, step.paths)
+        removed_paths = _remove_paths(extract_dir, step.paths)
 
-        new_path = ctx.work_dir / target.output_name
+        if target.checksum is None:
+            raise AssertionError("non-dry-run artifacts must have a checksum")
+        new_path = (
+            ctx.work_dir / "_derived" / "strip-tarball" / target.checksum / target.output_name
+        )
         repack_tar_gz(extract_dir, new_path)
-        _replace_artifact(state, target.output_name, new_path)
+        replacement = build_derived_artifact(
+            new_path,
+            target.output_name,
+            target.source_description,
+            dry_run=False,
+            parents=[target],
+        )
+        state.replace_artifact(replacement)
+        state.source.adopt_filtered_artifact(target, replacement, removed_paths)
 
 
 def _select_target(target_name: str | None, artifacts: list[Artifact]) -> Artifact:
@@ -36,36 +46,26 @@ def _select_target(target_name: str | None, artifacts: list[Artifact]) -> Artifa
             if artifact.output_name == target_name:
                 return artifact
         raise GorgetConfigError(
-            f"strip-tarball target not found among fetched artifacts: {target_name!r}"
+            f"strip-tarball target not found among pipeline artifacts: {target_name!r}"
         )
     if len(artifacts) != 1:
         raise GorgetConfigError(
-            "strip-tarball requires 'target' when there is more than one fetched "
+            "strip-tarball requires 'target' when there is more than one pipeline "
             f"artifact (found {len(artifacts)})"
         )
     return artifacts[0]
 
 
-def _remove_paths(extract_dir: Path, patterns: list[str]) -> None:
+def _remove_paths(extract_dir: Path, patterns: list[str]) -> list[Path]:
+    removed_paths = []
     for pattern in patterns:
         matches = list(extract_dir.glob(pattern))
         if not matches:
             raise GorgetConfigError(f"strip-tarball path pattern matched nothing: {pattern!r}")
         for match in matches:
-            if match.is_dir():
+            removed_paths.append(match.relative_to(extract_dir))
+            if match.is_dir() and not match.is_symlink():
                 shutil.rmtree(match)
             else:
                 match.unlink()
-
-
-def _replace_artifact(state: StageState, output_name: str, new_path: Path) -> None:
-    for index, artifact in enumerate(state.artifacts):
-        if artifact.output_name == output_name:
-            state.artifacts[index] = build_derived_artifact(
-                new_path,
-                output_name,
-                artifact.source_description,
-                dry_run=False,
-                parents=[artifact],
-            )
-            return
+    return removed_paths

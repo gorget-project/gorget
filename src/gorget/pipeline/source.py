@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -52,6 +54,32 @@ class SourceWorkspace:
 
     def mark_dirty(self) -> None:
         self.dirty = True
+
+    def adopt_filtered_artifact(
+        self,
+        parent: Artifact,
+        derived: Artifact,
+        removed_paths: Iterable[Path],
+    ) -> None:
+        """Apply an archive filter to the active tree when it backs ``parent``."""
+        if self.artifact is not parent or self.path is None:
+            return
+
+        for archive_path in removed_paths:
+            relative_path = archive_path
+            if self.layout == "checkout":
+                if len(archive_path.parts) < 2:
+                    raise GorgetConfigError(
+                        "Cannot remove the archive root from an active source checkout"
+                    )
+                relative_path = Path(*archive_path.parts[1:])
+            workspace_path = self.path / relative_path
+            if workspace_path.is_dir() and not workspace_path.is_symlink():
+                shutil.rmtree(workspace_path)
+            elif workspace_path.exists() or workspace_path.is_symlink():
+                workspace_path.unlink()
+
+        self.artifact = derived
 
     def commit(self, work_dir: Path, *, dry_run: bool) -> Artifact | None:
         if dry_run or not self.dirty or self.path is None or self.artifact is None:

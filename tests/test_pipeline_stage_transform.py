@@ -81,6 +81,53 @@ def test_dispatches_strip_tarball_and_replaces_artifact(tmp_path):
     assert not any("drop.txt" in n for n in names)
 
 
+def test_source_commit_keeps_paths_removed_by_earlier_strip(tmp_path, mocker):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "go.mod").write_text("module example.com/source\n")
+    (source_dir / "drop.txt").write_text("remove me\n")
+    archive = tmp_path / "foo-1.2.3.tar.gz"
+    make_tar_gz(source_dir, archive, arcname="foo-1.2.3", mtime=1700000000)
+    artifact = build_artifact(archive, archive.name, "repo", dry_run=False)
+
+    def fake_go_vendor(args, cwd=None, env=None):
+        cwd = Path(cwd)
+        if args == ["go", "mod", "tidy"]:
+            (cwd / "go.mod").write_text(
+                "module example.com/source\nrequire example.com/dependency v1.0.0\n"
+            )
+        if args == ["go", "mod", "vendor"]:
+            (cwd / "vendor").mkdir()
+            (cwd / "vendor" / "modules.txt").write_text(
+                "example.com/dependency v1.0.0\n"
+            )
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_go_vendor)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.pipeline.source.commit_timestamp", return_value=1700000000)
+    state = make_state(tmp_path / "work", artifacts=[artifact], source_dir=source_dir)
+    state.source.attach_checkout(source_dir, artifact)
+    spec = PipelineSpec(
+        transform=TransformSection(
+            steps=[
+                StripTarballStep(paths=["*/drop.txt"]),
+                VendorStep(ecosystem="go", sync_go_modules=True),
+            ]
+        )
+    )
+
+    TransformStage().run(make_run_ctx(tmp_path), spec, state)
+
+    assert not (source_dir / "drop.txt").exists()
+    source_artifact = state.find_artifact("foo-1.2.3.tar.gz")
+    with tarfile.open(source_artifact.path) as source_archive:
+        assert "foo-1.2.3/drop.txt" not in source_archive.getnames()
+        go_mod = source_archive.extractfile("foo-1.2.3/go.mod")
+        assert go_mod is not None
+        assert "example.com/dependency" in go_mod.read().decode()
+
+
 def test_dispatches_pack_and_appends_artifact(tmp_path):
     package_dir = tmp_path / "package"
     package_dir.mkdir()

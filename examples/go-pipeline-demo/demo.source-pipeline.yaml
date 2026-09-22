@@ -4,9 +4,7 @@ fetch:
     ref: "main"
 
 transform:
-  # Remove docs/ from the source tarball before it's emitted. Note this only
-  # affects the *archived copy* -- it doesn't touch the live checkout that
-  # vendor-bump/vendor/build-ui/run operate against below.
+  # Remove docs/ from the source before later transforms use and emit it.
   - type: strip-tarball
     paths:
       - "*/docs"

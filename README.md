@@ -136,7 +136,7 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 
 | Step | Purpose |
 |---|---|
-| `strip-tarball` | Remove paths (glob patterns) from a fetched tarball and repack it |
+| `strip-tarball` | Derive a tarball with matching paths removed, preserving the acquired input |
 | `vendor-bump` | Bump a vendored dependency (direct **or** nested transitive) to a minimum or series-capped version (Go/npm/pnpm/yarn/Cargo/Maven), before a later `vendor` step re-vendors. Transitive deps are forced via the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm.overrides`, yarn `resolutions`, cargo `--precise`). Plain `version: "0.39.0"` means `>=0.39.0` (no upper bound); tilde `version: "~4.18.2"` means `>=4.18.2` capped to the `4.18.x` series |
 | `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive from the source workspace |
 | `build-ui` | Run `npm`/`yarn run <script>` and archive the build output directory |

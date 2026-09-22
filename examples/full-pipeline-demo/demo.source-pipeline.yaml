@@ -15,11 +15,9 @@ fetch:
     filename: "hello-2.12.1.tar.gz.sig"
 
 transform:
-  # Remove docs/ from the source tarball before it's emitted. Note this only
-  # affects the *archived copy* -- it doesn't touch the live checkout that
-  # vendor-bump/vendor/build-ui/run operate against below. `target` is required
-  # here (unlike go-pipeline-demo) since multiple artifacts are now fetched --
-  # no auto-select fallback once there's more than one to guess between.
+  # Remove docs/ from the source before later transforms use and emit it.
+  # `target` is required here (unlike go-pipeline-demo) since multiple artifacts
+  # are fetched, so gorget cannot select one by itself.
   - type: strip-tarball
     target: "demo-main.tar.gz"
     paths:
