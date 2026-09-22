@@ -50,6 +50,8 @@ def test_fetch_stage_syncs_source_dir_into_state(tmp_path, mocker):
 
     assert state.source.path is not None
     assert (state.source.path / "README.md").exists()
+    assert state.input_artifacts == state.artifacts
+    assert len(state.input_artifacts) == 1
 
 
 def test_fetch_stage_leaves_source_dir_none_without_git_step(tmp_path):

@@ -56,7 +56,7 @@ class FetchStage:
             source_dir_before = fetch_ctx.source_dir
             artifacts = handler.run(step, fetch_ctx)
             logger.debug("fetch step produced: %s", [a.output_name for a in artifacts])
-            state.artifacts.extend(artifacts)
+            state.add_input_artifacts(artifacts)
             # The step that first sets source_dir is the `git` clone; its sole
             # artifact is the source tarball backing that checkout. Record it so
             # a later transform step editing the checkout can repack it.

@@ -1,4 +1,8 @@
-"""Mutable state threaded through the stage pipeline (fetch's artifacts feed emit)."""
+"""Mutable state threaded through the pipeline.
+
+Acquired inputs remain available for verification. ``artifacts`` is the current
+publication set and can contain replacements derived from those inputs.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ class StageState:
     work_dir: Path
     spec: SpecFile
     report: PipelineReport
+    input_artifacts: list[Artifact] = field(default_factory=list)
     artifacts: list[Artifact] = field(default_factory=list)
     source: SourceWorkspace = field(default_factory=SourceWorkspace)
 
@@ -30,7 +35,17 @@ class StageState:
         for artifact in self.artifacts:
             if artifact.output_name == output_name:
                 return artifact
-        raise GorgetConfigError(f"No fetched artifact named {output_name!r}")
+        raise GorgetConfigError(f"No publication artifact named {output_name!r}")
+
+    def find_input_artifact(self, output_name: str) -> Artifact:
+        for artifact in self.input_artifacts:
+            if artifact.output_name == output_name:
+                return artifact
+        raise GorgetConfigError(f"No acquired input artifact named {output_name!r}")
+
+    def add_input_artifacts(self, artifacts: list[Artifact]) -> None:
+        self.input_artifacts.extend(artifacts)
+        self.artifacts.extend(artifacts)
 
     def replace_artifact(self, replacement: Artifact) -> None:
         for index, artifact in enumerate(self.artifacts):

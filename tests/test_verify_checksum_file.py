@@ -12,7 +12,13 @@ from gorget.verify.checksum_file import ChecksumFileHandler
 
 def make_state(tmp_path, artifacts):
     report = PipelineReport(package="foo", version="1.2.3", old_version=None, dry_run=False)
-    return StageState(work_dir=tmp_path, spec=None, report=report, artifacts=list(artifacts))
+    return StageState(
+        work_dir=tmp_path,
+        spec=None,
+        report=report,
+        input_artifacts=list(artifacts),
+        artifacts=list(artifacts),
+    )
 
 
 def make_artifact(path, name):
@@ -45,6 +51,30 @@ def test_checksum_file_passes_on_match(tmp_path):
 
     assert result.status == "passed"
     assert result.type == "checksum-file"
+
+
+def test_checksum_file_verifies_acquired_input_after_publication_is_replaced(tmp_path):
+    input_path = tmp_path / "input.tar.gz"
+    input_path.write_bytes(b"upstream bytes")
+    digest = hashlib.sha256(input_path.read_bytes()).hexdigest()
+    checksums_path = tmp_path / "SHASUMS256.txt"
+    checksums_path.write_text(f"{digest}  foo.tar.gz\n")
+
+    inputs = make_two_artifacts(
+        input_path, "foo.tar.gz", checksums_path, "SHASUMS256.txt"
+    )
+    state = make_state(tmp_path, inputs)
+    transformed_path = tmp_path / "transformed.tar.gz"
+    transformed_path.write_bytes(b"derived bytes")
+    state.artifacts[0] = make_artifact(transformed_path, "foo.tar.gz")
+
+    result = ChecksumFileHandler().run(
+        ChecksumFileStep(target="foo.tar.gz", checksums_file="SHASUMS256.txt"),
+        None,
+        state,
+    )
+
+    assert result.status == "passed"
 
 
 def test_checksum_file_handles_binary_mode_marker(tmp_path):
