@@ -23,22 +23,30 @@ def test_pnpm_vendor_runs_install_per_default_platform(tmp_path, mocker):
     assert mock_run.call_args_list[0] == mocker.call(
         [
             "pnpm", "fetch",
-            "--ignore-scripts", "--frozen-lockfile",
+            "--ignore-scripts",
             "--store-dir", str(result),
-            "--cpu", "x64", "--os", "linux",
         ],
         cwd=tmp_path,
-        env={"CI": "true"},
+        env={
+            "CI": "true",
+            "npm_config_cpu": "x64",
+            "npm_config_os": "linux",
+            "npm_config_libc": "glibc",
+        },
     )
     assert mock_run.call_args_list[1] == mocker.call(
         [
             "pnpm", "fetch",
-            "--ignore-scripts", "--frozen-lockfile",
+            "--ignore-scripts",
             "--store-dir", str(result),
-            "--cpu", "arm64", "--os", "linux",
         ],
         cwd=tmp_path,
-        env={"CI": "true"},
+        env={
+            "CI": "true",
+            "npm_config_cpu": "arm64",
+            "npm_config_os": "linux",
+            "npm_config_libc": "glibc",
+        },
     )
     assert result.is_dir()
     assert result.parent != tmp_path
@@ -50,8 +58,12 @@ def test_pnpm_vendor_with_custom_platforms(tmp_path, mocker):
     platforms = [VendorPlatform(cpu="s390x", os="linux", libc="glibc")]
     result = PnpmVendor().vendor(tmp_path, platforms=platforms)
     assert mock_run.call_count == 1
-    assert "--cpu" in mock_run.call_args_list[0].args[0]
-    assert "s390x" in mock_run.call_args_list[0].args[0]
+    assert mock_run.call_args_list[0].kwargs["env"] == {
+        "CI": "true",
+        "npm_config_cpu": "s390x",
+        "npm_config_os": "linux",
+        "npm_config_libc": "glibc",
+    }
     PnpmVendor().cleanup(result)
 
 
@@ -82,10 +94,12 @@ def test_pnpm_vendor_cleans_all_workspace_node_modules_and_preserves_upstream(
     existing.mkdir(parents=True)
     (existing / "upstream.txt").write_text("keep")
 
-    def install(command, **_kwargs):
+    def install(command, **kwargs):
         store_dir = Path(command[command.index("--store-dir") + 1])
         (store_dir / "v3" / "files").mkdir(parents=True, exist_ok=True)
-        (store_dir / "v3" / "files" / command[-3]).write_text("cached")
+        (store_dir / "v3" / "files" / kwargs["env"]["npm_config_cpu"]).write_text(
+            "cached"
+        )
         (tmp_path / "node_modules").mkdir(exist_ok=True)
         (tmp_path / "packages" / "a" / "node_modules").mkdir(parents=True, exist_ok=True)
         (existing / "generated.txt").write_text("remove")
