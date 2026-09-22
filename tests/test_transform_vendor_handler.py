@@ -7,7 +7,7 @@ from gorget.config.schema import ToolchainEntry, VendorModule, VendorStep
 from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchContext
-from gorget.fetch.vendor import VendorHandler
+from gorget.transform.vendor import VendorHandler
 
 
 def make_ctx(work_dir, source_dir=None, dry_run=False, toolchain=()):
@@ -37,7 +37,7 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
     `go_vendor_license --use-archive` (see GoVendor.archive_root_files), so
     go.sum here must land next to "vendor/", not inside it.
     """
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
@@ -50,7 +50,7 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
         return vendor_dir
 
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS",
+        "gorget.transform.vendor._ECOSYSTEMS",
         {
             "go": Mock(
                 vendor=Mock(side_effect=fake_vendor),
@@ -69,7 +69,7 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
 
 
 def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "etcd"
     source_dir.mkdir()
 
@@ -81,7 +81,7 @@ def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
         return vendor_dir
 
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+        "gorget.transform.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
     )
     step = VendorStep(
         ecosystem="go",
@@ -107,7 +107,7 @@ def test_vendor_archive_members_use_source_commit_timestamp(tmp_path, mocker):
     carry the source checkout's commit timestamp instead.
     """
     mock_commit_timestamp = mocker.patch(
-        "gorget.fetch.vendor.commit_timestamp", return_value=1700000000
+        "gorget.transform.vendor.commit_timestamp", return_value=1700000000
     )
     source_dir = tmp_path / "src"
     source_dir.mkdir()
@@ -121,7 +121,7 @@ def test_vendor_archive_members_use_source_commit_timestamp(tmp_path, mocker):
         return vendor_dir
 
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS",
+        "gorget.transform.vendor._ECOSYSTEMS",
         {
             "go": Mock(
                 vendor=Mock(side_effect=fake_vendor),
@@ -141,7 +141,7 @@ def test_vendor_archive_members_use_source_commit_timestamp(tmp_path, mocker):
 
 
 def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "etcd"
     source_dir.mkdir()
 
@@ -153,7 +153,7 @@ def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
         return vendor_dir
 
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS",
+        "gorget.transform.vendor._ECOSYSTEMS",
         {
             "go": Mock(
                 vendor=Mock(side_effect=fake_vendor), archive_root_files=Mock(return_value=[])
@@ -172,7 +172,7 @@ def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
 
 def test_vendor_dry_run_skips_ecosystem_and_combine(tmp_path, mocker):
     mock_vendor = Mock()
-    mocker.patch("gorget.fetch.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
+    mocker.patch("gorget.transform.vendor._ECOSYSTEMS", {"go": Mock(vendor=mock_vendor)})
     step = VendorStep(ecosystem="go")
     artifacts = VendorHandler().run(step, make_ctx(tmp_path, source_dir=tmp_path, dry_run=True))
     mock_vendor.assert_not_called()
@@ -180,7 +180,7 @@ def test_vendor_dry_run_skips_ecosystem_and_combine(tmp_path, mocker):
 
 
 def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
@@ -192,7 +192,7 @@ def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
 
     mock_vendor = Mock(side_effect=fake_vendor)
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS",
+        "gorget.transform.vendor._ECOSYSTEMS",
         {"go": Mock(vendor=mock_vendor, archive_root_files=Mock(return_value=[]))},
     )
     step = VendorStep(ecosystem="go")
@@ -207,7 +207,7 @@ def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
     members like compliance/internal/tools from its vendor archive).
     VendorModule.use_workspace=False must reach the ecosystem's vendor() call.
     """
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
@@ -219,7 +219,7 @@ def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
 
     mock_vendor = Mock(side_effect=fake_vendor)
     mocker.patch(
-        "gorget.fetch.vendor._ECOSYSTEMS",
+        "gorget.transform.vendor._ECOSYSTEMS",
         {"go": Mock(vendor=mock_vendor, archive_root_files=Mock(return_value=[]))},
     )
     step = VendorStep(ecosystem="go", modules=[VendorModule(path=".", use_workspace=False)])

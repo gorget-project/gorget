@@ -58,7 +58,7 @@ def combine_vendor_archives(
 
     `mtime`, when given, is stamped onto every archive member -- e.g. the
     source checkout's commit timestamp -- in place of the vendor tool's live
-    filesystem mtimes (module downloads/installs happen at fetch wall-clock
+    filesystem mtimes (module downloads and installs happen at run time
     time), so re-running the same fetch produces a byte-identical archive.
 
     `root_files`, when given, are added at the archive's top level alongside

@@ -6,7 +6,7 @@ intermediate lookaside cache), applies transforms, verifies integrity,
 enforces dependency policy, and emits lookaside-ready artifacts.
 
 It's a plain CLI tool, installed like any other build dependency (e.g. via
-RPM) and invoked directly -- its `fetch:`/`vendor:` steps already run
+RPM) and invoked directly -- its acquisition and derivation steps already run
 untrusted third-party code the same way `go-vendor-tools`, `npm`, `cargo`, and Maven do,
 so it doesn't need or get container isolation those tools don't have either.
 
@@ -65,7 +65,6 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `spec-source` | Download the spec's `Source0`/`SourceN` URLs (macro-resolved), by index or all |
 | `url` | Download an explicit URL not declared in the spec |
 | `git` | Clone a repo at a tag/branch/commit (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
-| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm) |
 
 `git` (or another real fetch step) is mandatory for a **native package** (no
 Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
@@ -87,6 +86,7 @@ fetch:
     subdir: null                  # archive just this subdir of the checkout
     archive_name: "${PACKAGE}-${VERSION}.tar.gz"  # default shown; optional
 
+transform:
   - type: vendor
     ecosystem: cargo              # go | npm | cargo | composer | maven
     archive_name: "${PACKAGE}-${VERSION}-vendor.tar.xz"  # see note below
@@ -136,12 +136,16 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 
 | Step | Purpose |
 |---|---|
-| `strip-tarball` | Remove paths (glob patterns) from a fetched tarball and repack it |
+| `strip-tarball` | Derive a tarball with matching paths removed, preserving the acquired input |
 | `vendor-bump` | Bump a vendored dependency (direct **or** nested transitive) to a minimum or series-capped version (Go/npm/pnpm/yarn/Cargo/Maven), before a later `vendor` step re-vendors. Transitive deps are forced via the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm.overrides`, yarn `resolutions`, cargo `--precise`). Plain `version: "0.39.0"` means `>=0.39.0` (no upper bound); tilde `version: "~4.18.2"` means `>=4.18.2` capped to the `4.18.x` series |
-| `vendor` | Same step as `fetch:`'s `vendor` (reused) -- lets `vendor-bump` run before vendoring, since `fetch:` always runs before `transform:` |
+| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive from the source workspace |
 | `build-ui` | Run `npm`/`yarn run <script>` and archive the build output directory |
 | `run` | Escape hatch: an arbitrary command, with declared output paths archived as new artifacts afterward |
 | `pack` | Archive an explicit list of files already in `--package-dir` into a single deterministic tarball, each at its own relative path |
+
+For compatibility, gorget still accepts `vendor` entries under `fetch:` and
+moves them before the declared transform steps. This syntax is deprecated;
+new and updated pipelines should declare vendoring under `transform:`.
 
 `vendor-bump`/`vendor`/`build-ui`/`run` all operate against a shared working
 source tree: a `git` fetch step's checkout if one ran, otherwise the sole
@@ -165,13 +169,10 @@ transform:
     discovered-outputs: "discovered.tsv"   # each line: "<output_name>\t<path>"
 ```
 
-`run:`'s `artifacts:` materializes already-fetched artifacts' raw,
-unextracted bytes into the step's cwd (the same idiom as `post:`'s
-`artifacts:` below) -- for a script that needs to read an artifact directly
-rather than through `target:`'s extracted view, e.g. checksum-verifying it
-manually before a later step in the same `transform:` list mutates it
-(`verify:` always runs after all of `transform:`, so it can't see pristine
-bytes once something upstream in `transform:` has already changed them).
+`run:`'s `artifacts:` materializes publication artifacts' raw, unextracted
+bytes into the step's cwd (the same idiom as `post:`'s `artifacts:` below).
+Use it when a script needs the archive itself rather than `target:`'s
+extracted view.
 
 ### `verify:`
 
@@ -220,6 +221,27 @@ All verification failures across all checks -- re-publication and declared
 at the first failure, so a single run surfaces everything wrong at once.
 `report.json`'s `verify` stage includes a `details` list with the per-check
 type/target/status/reason.
+
+### `publish:`
+
+Selects the exact artifact filenames that Emit writes to `--output-dir` and
+the `sources` manifest. The order in `files` is preserved.
+
+```yaml
+publish:
+  files:
+    - "${PACKAGE}-${VERSION}.tar.gz"
+    - "${PACKAGE}-${VERSION}-vendor.tar.xz"
+```
+
+Gorget fails if a listed file was not produced or appears more than once.
+Produced files that are not listed remain available to earlier stages, but
+Emit does not write them. An explicit empty list emits an empty `sources`
+manifest.
+
+Pipelines without `publish:` keep the previous behavior and emit every
+produced artifact. Gorget logs a deprecation warning for this compatibility
+mode. A later release will require the section.
 
 ### `accepted-checksums:`
 

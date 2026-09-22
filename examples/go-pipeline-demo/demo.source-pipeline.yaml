@@ -4,9 +4,7 @@ fetch:
     ref: "main"
 
 transform:
-  # Remove docs/ from the source tarball before it's emitted. Note this only
-  # affects the *archived copy* -- it doesn't touch the live checkout that
-  # vendor-bump/vendor/build-ui/run operate against below.
+  # Remove docs/ from the source before later transforms use and emit it.
   - type: strip-tarball
     paths:
       - "*/docs"
@@ -20,8 +18,7 @@ transform:
       - dependency: "rsc.io/quote"
         version: "v1.5.2"
 
-  # Re-vendor now that vendor-bump has bumped the dependency -- vendor is a
-  # legal step under both fetch: and transform:, reused unchanged either way.
+  # Re-vendor now that vendor-bump has bumped the dependency.
   - type: vendor
     ecosystem: go
 
@@ -55,3 +52,11 @@ transform:
 # toolchain:
 #   - name: go
 #     version: 1.22.0
+
+publish:
+  files:
+    - "${PACKAGE}-${VERSION}.tar.gz"
+    - "${PACKAGE}-vendor.tar.gz"
+    - "${PACKAGE}-ui-assets.tar.gz"
+    - "go-version.txt"
+    - "demo-packaging-scripts.tar.gz"

@@ -28,8 +28,8 @@ def _find_checksum_entry(text: str, filename: str) -> str | None:
 
 class ChecksumFileHandler:
     def run(self, step: ChecksumFileStep, ctx: RunContext, state: StageState) -> CheckResult:
-        target = state.find_artifact(step.target)
-        checksums_artifact = state.find_artifact(step.checksums_file)
+        target = state.find_input_artifact(step.target)
+        checksums_artifact = state.find_input_artifact(step.checksums_file)
 
         expected = _find_checksum_entry(checksums_artifact.path.read_text(), target.output_name)
         if expected is None:

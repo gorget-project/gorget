@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from gorget.config.schema import VendorModule
-from gorget.fetch.vendor.lockfile import (
+from gorget.transform.vendor.lockfile import (
     npm_provides,
     parse_bundled_provides,
     pnpm_provides,

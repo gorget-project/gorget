@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from gorget.config.schema import BuildUiStep
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.fetch.base import build_artifact
+from gorget.pipeline.artifact import build_derived_artifact, derived_artifact_path
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
 from gorget.transform.base import TransformContext, ensure_source_dir
@@ -15,7 +15,7 @@ from gorget.util.subprocess_run import run
 class BuildUiHandler:
     def run(self, step: BuildUiStep, ctx: TransformContext, state: StageState) -> None:
         archive_name = step.archive_name or f"{ctx.vars.package}-ui-assets.tar.gz"
-        archive_path = ctx.work_dir / archive_name
+        archive_path = derived_artifact_path(ctx.work_dir, "build-ui", archive_name)
 
         if not ctx.dry_run:
             source_dir = ensure_source_dir(ctx, state)
@@ -34,6 +34,12 @@ class BuildUiHandler:
                 )
             repack_tar_gz(output_dir, archive_path)
 
-        state.artifacts.append(
-            build_artifact(archive_path, archive_name, f"build-ui:{step.ecosystem}", ctx.dry_run)
+        state.add_derived_artifact(
+            build_derived_artifact(
+                archive_path,
+                archive_name,
+                f"build-ui:{step.ecosystem}",
+                ctx.dry_run,
+                parents=[state.source.artifact] if state.source.artifact is not None else (),
+            )
         )

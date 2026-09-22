@@ -59,6 +59,7 @@ def test_strips_matched_path_from_sole_artifact(tmp_path):
         {"keep.txt": "keep", "deps/bundled-openssl/x.c": "bundled"},
     )
     artifact = make_artifact(archive, "foo-1.2.3.tar.gz", "abc")
+    input_bytes = archive.read_bytes()
     ctx = make_ctx(tmp_path / "work")
     state = make_state(tmp_path / "work", [artifact])
 
@@ -68,6 +69,13 @@ def test_strips_matched_path_from_sole_artifact(tmp_path):
     new_artifact = state.artifacts[0]
     assert new_artifact.output_name == "foo-1.2.3.tar.gz"
     assert new_artifact.checksum != "abc"
+    assert new_artifact.kind == "derived"
+    assert new_artifact.parents == (artifact.ref(),)
+    assert new_artifact.path != artifact.path
+    assert archive.read_bytes() == input_bytes
+    with tarfile.open(artifact.path) as tar:
+        input_names = tar.getnames()
+    assert any("bundled-openssl" in name for name in input_names)
     with tarfile.open(new_artifact.path) as tar:
         names = tar.getnames()
     assert "foo-1.2.3/keep.txt" in names
@@ -110,7 +118,7 @@ def test_target_not_found_raises(tmp_path):
     ctx = make_ctx(tmp_path / "work")
     state = make_state(tmp_path / "work", [artifact])
     step = StripTarballStep(target="missing.tar.gz", paths=["x"])
-    with pytest.raises(GorgetConfigError, match="not found among fetched artifacts"):
+    with pytest.raises(GorgetConfigError, match="not found among pipeline artifacts"):
         StripTarballHandler().run(step, ctx, state)
 
 

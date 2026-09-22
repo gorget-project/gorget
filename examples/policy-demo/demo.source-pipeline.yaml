@@ -17,3 +17,8 @@ policy:
       ecosystem: npm
       version: "2.0.0"
       reason: "demo: pin confirmation"
+
+publish:
+  files:
+    - "${PACKAGE}-${VERSION}.tar.gz"
+    - "${PACKAGE}-vendor.tar.gz"

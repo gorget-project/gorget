@@ -1,5 +1,6 @@
-"""`VerifyStage`: validates integrity/authenticity of what Fetch/Transform
-produced. Re-publication detection always runs when `/package/sources`
+"""`VerifyStage`: validates the integrity and authenticity of acquired inputs.
+
+Re-publication detection always runs when `/package/sources`
 exists -- no `verify:` step opt-in needed, since it's the core supply-chain
 safety net, not an optional check. Explicitly declared `verify:` steps
 (`gpg-signature`, `checksum-file`) run in addition. All failures are

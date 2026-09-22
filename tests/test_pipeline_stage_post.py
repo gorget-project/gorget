@@ -160,7 +160,7 @@ def test_bundled_provides_writes_inc_file(tmp_path):
 
     ctx = make_ctx(package_dir)
     state = make_state(tmp_path)
-    state.source_dir = source_dir
+    state.source.attach_tree(source_dir)
     spec = PipelineSpec(
         post=PostSection(
             steps=[BundledProvidesStep(ecosystem="npm", modules=[VendorModule(path="ui")])]
@@ -191,7 +191,7 @@ def test_bundled_provides_scope_all_includes_dev(tmp_path):
 
     ctx = make_ctx(package_dir)
     state = make_state(tmp_path)
-    state.source_dir = source_dir
+    state.source.attach_tree(source_dir)
     spec = PipelineSpec(
         post=PostSection(steps=[BundledProvidesStep(ecosystem="npm", scope="all")])
     )
@@ -213,7 +213,7 @@ def test_bundled_provides_output_override_and_rpm_version(tmp_path):
 
     ctx = make_ctx(package_dir)
     state = make_state(tmp_path)
-    state.source_dir = source_dir
+    state.source.attach_tree(source_dir)
     spec = PipelineSpec(
         post=PostSection(
             steps=[BundledProvidesStep(ecosystem="npm", output="provides.inc")]

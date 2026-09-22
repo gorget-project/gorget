@@ -28,8 +28,8 @@ README table for their exact behavior and caveats, e.g. `npm audit`/
 ## 2. Find the pipeline's ecosystem
 
 `vendor-constraints` needs to know which ecosystem's vendored copy to check
-(`go`, `npm`, or `cargo`) -- look at the package's existing `fetch:` or
-`transform:` steps for a `vendor`/`vendor-bump` step's `ecosystem:` field. For
+(`go`, `npm`, or `cargo`) -- look at the package's existing `transform:` steps
+for a `vendor`/`vendor-bump` step's `ecosystem:` field. For
 example, `metadata/grafana12.4.source-pipeline.yaml` in the `rpms` repo has:
 
 ```yaml
@@ -37,6 +37,7 @@ fetch:
   - type: git
     repo: "${UPSTREAM_REPO}"
     ref: "v${VERSION}"
+transform:
   - type: vendor
     ecosystem: go
     archive_name: "grafana-${VERSION}-vendor.tar.bz2"

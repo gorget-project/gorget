@@ -8,22 +8,13 @@ from typing import Protocol
 
 from gorget.config.schema import FetchStep, ToolchainEntry
 from gorget.config.substitution import SubstitutionVars
-from gorget.constants import CHECKSUM_ALGO
+from gorget.pipeline.artifact import Artifact
+from gorget.pipeline.artifact import artifact_report_dict as artifact_report_dict
+from gorget.pipeline.artifact import build_artifact as build_artifact
 from gorget.specfile import SpecFile
-from gorget.util.checksum import compute_digest
 
-
-@dataclass(frozen=True, kw_only=True)
-class FetchedArtifact:
-    path: Path
-    output_name: str
-    source_description: str
-    checksum: str | None  # None under --dry-run, when no bytes were actually fetched
-    # Whether this fetch primitive supports the Git-specific
-    # `allow-version-change` escape hatch. This is intentionally internal:
-    # config opts in through the fetch step, never through an artifact.
-    version_change_eligible: bool = False
-    allow_version_change: bool = False
+# Compatibility for integrations importing the old implementation-level name.
+FetchedArtifact = Artifact
 
 
 @dataclass(kw_only=True)
@@ -33,40 +24,11 @@ class FetchContext:
     spec: SpecFile
     vars: SubstitutionVars
     dry_run: bool
-    # Set by a `git` step after cloning, so a later `vendor` step in the same
-    # fetch list knows which checkout to vendor against (e.g. the etcd
-    # multi-submodule case: git-fetch the repo, then vendor several subdirs of it).
+    # Set by a `git` step after cloning so FetchStage can retain the checkout as
+    # the source workspace for later derivation.
     source_dir: Path | None = None
     toolchain: list[ToolchainEntry] = field(default_factory=list)
 
 
 class FetchStepHandler(Protocol):
-    def run(self, step: FetchStep, ctx: FetchContext) -> list[FetchedArtifact]: ...
-
-
-def build_artifact(
-    path: Path,
-    output_name: str,
-    source_description: str,
-    dry_run: bool,
-    *,
-    version_change_eligible: bool = False,
-    allow_version_change: bool = False,
-) -> FetchedArtifact:
-    checksum = None if dry_run else compute_digest(path, CHECKSUM_ALGO)
-    return FetchedArtifact(
-        path=path,
-        output_name=output_name,
-        source_description=source_description,
-        checksum=checksum,
-        version_change_eligible=version_change_eligible,
-        allow_version_change=allow_version_change,
-    )
-
-
-def artifact_report_dict(artifact: FetchedArtifact) -> dict:
-    return {
-        "output_name": artifact.output_name,
-        "source_description": artifact.source_description,
-        "checksum": artifact.checksum,
-    }
+    def run(self, step: FetchStep, ctx: FetchContext) -> list[Artifact]: ...

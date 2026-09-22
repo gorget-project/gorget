@@ -43,7 +43,9 @@ class PolicyStage:
             logger.warning("No policy configured for %s", ctx.vars.package)
             return StageResult(name=self.name, status="skipped", reason="no policy configured")
 
-        modules = discover_vendored_modules(spec, state.source_dir) if state.source_dir else []
+        modules = (
+            discover_vendored_modules(spec, state.source.path) if state.source.path else []
+        )
 
         results: list[CheckResult] = []
         results += check_vendor_constraints(policy.vendor_constraints, modules)

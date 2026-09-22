@@ -4,7 +4,7 @@ import pytest
 
 from gorget.config.schema import VendorModule
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.vendor.combine import combine_vendor_archives
+from gorget.transform.vendor.combine import combine_vendor_archives
 
 
 def _make_vendor_dir(base, name, files):

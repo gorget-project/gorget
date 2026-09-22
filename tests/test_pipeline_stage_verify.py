@@ -34,7 +34,13 @@ def make_ctx(package_dir, dry_run=False):
 
 def make_state(work_dir, artifacts=()):
     report = PipelineReport(package="foo", version="1.2.3", old_version=None, dry_run=False)
-    return StageState(work_dir=work_dir, spec=None, report=report, artifacts=list(artifacts))
+    return StageState(
+        work_dir=work_dir,
+        spec=None,
+        report=report,
+        input_artifacts=list(artifacts),
+        artifacts=list(artifacts),
+    )
 
 
 def make_artifact(path, name, checksum="x"):

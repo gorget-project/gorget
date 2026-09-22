@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from gorget.constants import REPORT_FILENAME
-from gorget.fetch.base import FetchedArtifact, artifact_report_dict
+from gorget.pipeline.artifact import Artifact, artifact_report_dict
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -38,7 +38,7 @@ class PipelineReport:
     old_version: str | None
     dry_run: bool
     stages: list[StageResult] = field(default_factory=list)
-    artifacts: list[FetchedArtifact] = field(default_factory=list)
+    artifacts: list[Artifact] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {

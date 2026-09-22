@@ -20,8 +20,8 @@ from gorget.verify.base import CheckResult
 
 class GpgSignatureHandler:
     def run(self, step: GpgSignatureStep, ctx: RunContext, state: StageState) -> CheckResult:
-        target = state.find_artifact(step.target)
-        signature = state.find_artifact(step.signature)
+        target = state.find_input_artifact(step.target)
+        signature = state.find_input_artifact(step.signature)
         keyring_path = ctx.gpg_keys_dir / step.keyring
         if not keyring_path.is_file():
             raise GorgetConfigError(f"GPG keyring not found: {keyring_path}")

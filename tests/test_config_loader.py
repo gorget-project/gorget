@@ -10,6 +10,7 @@ from gorget.config.schema import (
     GitStep,
     GpgSignatureStep,
     PostRunStep,
+    PublishSection,
     RunStep,
     SpecSourceStep,
     SpecUpdateStep,
@@ -41,7 +42,7 @@ def test_load_yaml_malformed_raises_config_error():
 def test_build_pipeline_spec_full_schema_round_trips():
     spec = build_pipeline_spec(FIXTURES / "full-schema.yaml", substitution_vars=make_vars())
     assert spec.package == "example"
-    assert len(spec.fetch) == 5
+    assert len(spec.fetch) == 4
     assert isinstance(spec.fetch[0], SpecUpdateStep)
     assert spec.fetch[0].reset_release == "1"
     assert spec.fetch[0].substitutions[0].replacement == "%global forgeurl https://example.com/example"
@@ -50,12 +51,14 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert spec.fetch[2].url == "https://example.com/example-1.2.3-extra.tar.gz"
     assert isinstance(spec.fetch[3], GitStep)
     assert spec.fetch[3].ref == "v1.2.3"
-    assert isinstance(spec.fetch[4], VendorStep)
-    assert spec.fetch[4].ecosystem == "go"
-
-    assert len(spec.transform.steps) == 1
-    assert isinstance(spec.transform.steps[0], StripTarballStep)
-    assert spec.transform.steps[0].paths == ["docs/"]
+    assert len(spec.transform.steps) == 2
+    assert isinstance(spec.transform.steps[0], VendorStep)
+    assert spec.transform.steps[0].ecosystem == "go"
+    assert isinstance(spec.transform.steps[1], StripTarballStep)
+    assert spec.transform.steps[1].paths == ["docs/"]
+    assert spec.publish == PublishSection(
+        files=["example-1.2.3.tar.gz", "example-vendor.tar.gz"]
+    )
     assert len(spec.toolchain.entries) == 1
     assert spec.toolchain.entries[0].name == "go"
     assert spec.toolchain.entries[0].version == "1.22"
@@ -96,9 +99,49 @@ def test_full_pipeline_example_declares_node24_toolchain():
     ]
 
 
+@pytest.mark.parametrize(
+    "pipeline_file",
+    sorted(EXAMPLES.glob("*/*.source-pipeline.yaml")),
+    ids=lambda path: f"{path.parent.name}/{path.name}",
+)
+def test_example_pipeline_parses(pipeline_file):
+    build_pipeline_spec(pipeline_file, substitution_vars=make_vars())
+
+
 def test_build_pipeline_spec_fetch_only():
     spec = build_pipeline_spec(FIXTURES / "fetch-only.yaml", substitution_vars=make_vars())
     assert spec.fetch == [SpecSourceStep(index=0)]
+    assert spec.publish is None
+
+
+def test_publish_section_parses_filenames():
+    spec = parse_pipeline_spec(
+        {"publish": {"files": ["foo-1.2.3.tar.gz", "foo-1.2.3-vendor.tar.xz"]}}
+    )
+
+    assert spec.publish == PublishSection(
+        files=["foo-1.2.3.tar.gz", "foo-1.2.3-vendor.tar.xz"]
+    )
+
+
+def test_explicit_empty_publish_section_is_not_legacy_default():
+    spec = parse_pipeline_spec({"publish": {"files": []}})
+
+    assert spec.publish == PublishSection(files=[])
+
+
+@pytest.mark.parametrize(
+    ("publish", "message"),
+    [
+        ([], "must be a mapping"),
+        ({"files": "foo.tar.gz"}, "must be a list of filenames"),
+        ({"files": [1]}, "must be a list of filenames"),
+        ({"unknown": []}, "Unknown publish key"),
+    ],
+)
+def test_invalid_publish_section_raises_config_error(publish, message):
+    with pytest.raises(GorgetConfigError, match=message):
+        parse_pipeline_spec({"publish": publish})
 
 
 def test_git_fetch_allow_version_change_parses():
@@ -125,7 +168,7 @@ def test_build_pipeline_spec_vendor_multi_submodule():
     spec = build_pipeline_spec(
         FIXTURES / "vendor-multi-submodule.yaml", substitution_vars=make_vars()
     )
-    vendor_step = spec.fetch[1]
+    vendor_step = spec.transform.steps[0]
     assert isinstance(vendor_step, VendorStep)
     assert [m.path for m in vendor_step.modules] == ["server", "etcdctl", "etcdutl"]
     assert vendor_step.archive_name == "example-vendor.tar.gz"
@@ -134,6 +177,27 @@ def test_build_pipeline_spec_vendor_multi_submodule():
 def test_unknown_fetch_type_raises_config_error():
     with pytest.raises(GorgetConfigError, match="Unknown fetch step type"):
         build_pipeline_spec(FIXTURES / "unknown-fetch-type.yaml", substitution_vars=make_vars())
+
+
+def test_legacy_fetch_vendor_moves_to_transform_and_warns(caplog):
+    with caplog.at_level("WARNING", logger="gorget.config.loader"):
+        spec = parse_pipeline_spec(
+            {
+                "fetch": [
+                    {
+                        "type": "git",
+                        "repo": "https://example.test/project.git",
+                        "ref": "v1.2.3",
+                    },
+                    {"type": "vendor", "ecosystem": "go"},
+                ]
+            }
+        )
+
+    assert len(spec.fetch) == 1
+    assert isinstance(spec.fetch[0], GitStep)
+    assert spec.transform.steps == [VendorStep(ecosystem="go")]
+    assert "Deprecated pipeline syntax" in caplog.text
 
 
 def test_transform_strip_tarball_step_parses():

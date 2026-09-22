@@ -31,7 +31,7 @@ tarball URL to fall back to or add a check against. A brand-new native
 package has no such URL -- there's nothing upstream ever published as a
 tarball, so `fetch: git` (or another real fetch step) is mandatory rather
 than one option among several: there's no bare-`spec-source` fallback the
-way an already-Fedora-derived package has. `fetch: vendor` is a separate
+way an already-Fedora-derived package has. `transform: vendor` is a separate
 question -- add it only if the package actually has dependencies to vendor,
 exactly the same condition as for any package, native or not.
 (`transform:`/`verify:`/`policy:`/`post:` are all still available too, if
@@ -100,7 +100,7 @@ violation) mean.
 | You need to... | Add | See |
 |---|---|---|
 | Clone a git repo instead of downloading a tarball | `fetch: git` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/), or [`native-cargo-demo`](../../examples/native-cargo-demo/) for the minimal git-only case |
-| Vendor Go/npm/pnpm/yarn/Cargo/Composer/Maven dependencies | `fetch: vendor` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/) (Go), [`native-cargo-demo`](../../examples/native-cargo-demo/) (Cargo) |
+| Vendor Go/npm/pnpm/yarn/Cargo/Composer/Maven dependencies | `transform: vendor` | [`go-pipeline-demo`](../../examples/go-pipeline-demo/) (Go), [`native-cargo-demo`](../../examples/native-cargo-demo/) (Cargo) |
 | Clone a *private* repo | `fetch: git` + ambient git auth | [Fetch from a private git repo](fetch-from-a-private-repo.md) |
 | Strip paths from a fetched tarball, build UI assets, pack an explicit file list into an archive, or run an arbitrary command | `transform:` | README [`transform:`](../../README.md#transform) |
 | Verify a GPG signature or a checksums-listing file | `verify:` | [`verify-demo`](../../examples/verify-demo/) |

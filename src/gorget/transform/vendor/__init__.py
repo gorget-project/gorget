@@ -1,9 +1,4 @@
-"""Generate dependency vendor archives for supported ecosystems.
-
-Reused by both the Fetch stage's `vendor` step and the Transform stage's `vendor`
-step (see `fetch/vendor/base.py`'s `VendorRunContext` for why this isn't typed
-against the concrete `FetchContext`).
-"""
+"""Generate dependency vendor archives from the source workspace."""
 
 from __future__ import annotations
 
@@ -15,16 +10,16 @@ from typing import cast
 
 from gorget.config.schema import ToolchainEntry, VendorPlatform, VendorStep
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.base import FetchedArtifact, build_artifact
-from gorget.fetch.vendor.base import VendorEcosystem, VendorRunContext
-from gorget.fetch.vendor.cargo import CargoVendor
-from gorget.fetch.vendor.combine import combine_vendor_archives
-from gorget.fetch.vendor.composer import ComposerVendor
-from gorget.fetch.vendor.go import GoVendor
-from gorget.fetch.vendor.maven import MavenVendor
-from gorget.fetch.vendor.npm import NpmVendor
-from gorget.fetch.vendor.pnpm import PnpmVendor
-from gorget.fetch.vendor.yarn import YarnVendor
+from gorget.pipeline.artifact import Artifact, build_derived_artifact, derived_artifact_path
+from gorget.transform.vendor.base import VendorEcosystem, VendorRunContext
+from gorget.transform.vendor.cargo import CargoVendor
+from gorget.transform.vendor.combine import combine_vendor_archives
+from gorget.transform.vendor.composer import ComposerVendor
+from gorget.transform.vendor.go import GoVendor
+from gorget.transform.vendor.maven import MavenVendor
+from gorget.transform.vendor.npm import NpmVendor
+from gorget.transform.vendor.pnpm import PnpmVendor
+from gorget.transform.vendor.yarn import YarnVendor
 from gorget.util.git import commit_timestamp
 
 _ECOSYSTEMS: dict[str, VendorEcosystem] = {
@@ -39,10 +34,10 @@ _ECOSYSTEMS: dict[str, VendorEcosystem] = {
 
 
 class VendorHandler:
-    def run(self, step: VendorStep, ctx: VendorRunContext) -> list[FetchedArtifact]:
+    def run(self, step: VendorStep, ctx: VendorRunContext) -> list[Artifact]:
         ecosystem = _ECOSYSTEMS[step.ecosystem]
         archive_name = step.archive_name or f"{ctx.vars.package}-vendor.tar.gz"
-        archive_path = ctx.work_dir / archive_name
+        archive_path = derived_artifact_path(ctx.work_dir, "vendor", archive_name)
 
         if not ctx.dry_run:
             if ctx.source_dir is None:
@@ -98,7 +93,14 @@ class VendorHandler:
                 module_outputs, archive_path, mtime=mtime, root_files=root_files
             )
 
-        return [build_artifact(archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run)]
+        return [
+            build_derived_artifact(
+                archive_path,
+                archive_name,
+                f"vendor:{step.ecosystem}",
+                ctx.dry_run,
+            )
+        ]
 
     @staticmethod
     def _vendor_module(

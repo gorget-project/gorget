@@ -53,9 +53,7 @@ pins:
 ```
 
 `vendor-bump` must come before the `vendor` step, and both belong in
-`transform:` (not `fetch:`) even though `vendor` is also a valid `fetch:`
-step type elsewhere -- `fetch:` always runs before `transform:`, so this is
-the only ordering that lets the pin's edit land before vendoring reads it.
+`transform:`. This ordering lets the pin's edit land before vendoring reads it.
 See [`go-pipeline-demo`](../../examples/go-pipeline-demo/) for this running
 against a real `go.mod`.
 
@@ -72,7 +70,7 @@ compute that patch offline the same way you would for a CVE backport
 (`go mod edit`/`go mod tidy` against a pristine clone), since Konflux builds
 are hermetic and `%prep` can't re-run those commands itself. This is exactly
 what broke `trivy` for real, via the equivalent `go-vendor-tools.toml`
-`pre_commands` mechanism -- see `gorget/fetch/vendor/gomod_patch_sync.py`'s
+`pre_commands` mechanism -- see `gorget/transform/vendor/gomod_patch_sync.py`'s
 module docstring for the full mechanism, which is identical for both.
 
 When a package uses `go-vendor-tools.toml` dependency overrides, it can instead
