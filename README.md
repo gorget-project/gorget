@@ -65,7 +65,7 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `spec-source` | Download the spec's `Source0`/`SourceN` URLs (macro-resolved), by index or all |
 | `url` | Download an explicit URL not declared in the spec |
 | `git` | Clone a repo at a tag/branch/commit (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
-| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm) |
+| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven/Gradle vendor archive (multi-submodule aware, multi-arch for npm) |
 
 `git` (or another real fetch step) is mandatory for a **native package** (no
 Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
@@ -88,7 +88,7 @@ fetch:
     archive_name: "${PACKAGE}-${VERSION}.tar.gz"  # default shown; optional
 
   - type: vendor
-    ecosystem: cargo              # go | npm | cargo | composer | maven
+    ecosystem: cargo              # go | npm | cargo | composer | maven | gradle
     archive_name: "${PACKAGE}-${VERSION}-vendor.tar.xz"  # see note below
     modules:                       # default: [{path: "."}] -- a single
       - path: "."                  # module rooted at the checkout itself
@@ -172,6 +172,23 @@ rather than through `target:`'s extracted view, e.g. checksum-verifying it
 manually before a later step in the same `transform:` list mutates it
 (`verify:` always runs after all of `transform:`, so it can't see pristine
 bytes once something upstream in `transform:` has already changed them).
+
+For Gradle, gorget runs the configured `task` (default: `build`) with
+`GRADLE_USER_HOME` set to `vendor/`, then archives the populated Gradle user
+home. It uses `./gradlew` when the project includes the Gradle wrapper and
+otherwise uses `gradle`. For example, Gradle's own source tree should use its
+distribution task:
+
+```yaml
+transform:
+  - type: vendor
+    ecosystem: gradle
+    task: ":distributions-full:binDistributionZip"
+```
+
+A later build can use the extracted directory as `GRADLE_USER_HOME` and pass
+`--offline`. Gradle then fails if the build needs a dependency that the first
+build did not resolve.
 
 ### `verify:`
 
@@ -371,7 +388,7 @@ fails closed otherwise.
 
 ```yaml
 toolchain:
-  - name: node      # one of: go, node, npm, cargo, rustc, python, maven
+  - name: node      # one of: go, node, npm, cargo, rustc, python, maven, gradle
     version: "24"   # selected version stream; component-wise prefix match
     minimum-version: "24.16"  # optional inclusive version floor
 ```

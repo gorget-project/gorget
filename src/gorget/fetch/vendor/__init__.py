@@ -21,6 +21,7 @@ from gorget.fetch.vendor.cargo import CargoVendor
 from gorget.fetch.vendor.combine import combine_vendor_archives
 from gorget.fetch.vendor.composer import ComposerVendor
 from gorget.fetch.vendor.go import GoVendor
+from gorget.fetch.vendor.gradle import GradleVendor
 from gorget.fetch.vendor.maven import MavenVendor
 from gorget.fetch.vendor.npm import NpmVendor
 from gorget.fetch.vendor.pnpm import PnpmVendor
@@ -35,6 +36,7 @@ _ECOSYSTEMS: dict[str, VendorEcosystem] = {
     "cargo": CargoVendor(),
     "composer": ComposerVendor(),
     "maven": MavenVendor(),
+    "gradle": GradleVendor(),
 }
 
 
@@ -78,6 +80,7 @@ class VendorHandler:
                         module.use_workspace,
                         step.platforms or (),
                         sync_go_modules=step.sync_go_modules,
+                        gradle_task=step.task if step.ecosystem == "gradle" else None,
                     ),
                 )
                 for module in step.modules
@@ -110,7 +113,17 @@ class VendorHandler:
         platforms: Sequence[VendorPlatform],
         *,
         sync_go_modules: bool,
+        gradle_task: str | None,
     ) -> Path:
+        if gradle_task is not None:
+            return ecosystem.vendor(
+                module_dir,
+                toolchain,
+                package_dir,
+                use_workspace,
+                platforms,
+                task=gradle_task,
+            )
         if sync_go_modules:
             go_vendor = cast(GoVendor, ecosystem)
             return go_vendor.vendor(

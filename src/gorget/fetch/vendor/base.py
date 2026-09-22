@@ -33,6 +33,7 @@ class VendorEcosystem(Protocol):
         package_dir: Path | None = None,
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
+        task: str = "build",
     ) -> Path:
         """Run the ecosystem's vendor command against `module_dir` and return the
         path to the produced vendor directory.
@@ -48,6 +49,9 @@ class VendorEcosystem(Protocol):
         instead of `go work vendor` (combined workspace vendor) -- e.g.
         prometheus deliberately excludes workspace members like
         compliance/internal/tools from its vendor archive.
+
+        `task` is Gradle-specific and selects the Gradle task to run. Other
+        ecosystems accept and ignore it.
         """
         ...
 

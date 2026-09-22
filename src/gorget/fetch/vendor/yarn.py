@@ -32,6 +32,7 @@ class YarnVendor:
         package_dir: Path | None = None,
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
+        task: str = "build",
     ) -> Path:
         resolved = platforms or _DEFAULT_NPM_PLATFORMS
         berry = self._is_berry(module_dir)
