@@ -42,6 +42,7 @@ _VERSION_CHECKS: dict[str, tuple[list[str], re.Pattern[str]]] = {
     "rustc": (["rustc", "--version"], re.compile(r"rustc (\d+\.\d+\.\d+)")),
     "python": (["python3", "--version"], re.compile(r"Python (\d+\.\d+\.\d+)")),
     "maven": (["mvn", "--version"], re.compile(r"Apache Maven (\d+\.\d+\.\d+)")),
+    "gradle": (["gradle", "--version"], re.compile(r"Gradle (\d+\.\d+(?:\.\d+)?)")),
 }
 _DECLARED_VERSION = re.compile(r"\d+(?:\.\d+)*")
 _RPM_BINDIR = Path("/usr/bin")

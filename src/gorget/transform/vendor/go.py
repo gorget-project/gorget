@@ -102,6 +102,7 @@ class GoVendor:
         package_dir: Path | None = None,
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
+        task: str = "build",
         sync_go_modules: bool = False,
     ) -> Path:
         config = _load_archive_config(package_dir)

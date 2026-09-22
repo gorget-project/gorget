@@ -88,7 +88,7 @@ fetch:
 
 transform:
   - type: vendor
-    ecosystem: cargo              # go | npm | cargo | composer | maven
+    ecosystem: cargo              # go | npm | cargo | composer | maven | gradle
     archive_name: "${PACKAGE}-${VERSION}-vendor.tar.xz"  # see note below
     modules:                       # default: [{path: "."}] -- a single
       - path: "."                  # module rooted at the checkout itself
@@ -138,7 +138,7 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 |---|---|
 | `strip-tarball` | Derive a tarball with matching paths removed, preserving the acquired input |
 | `vendor-bump` | Bump a vendored dependency (direct **or** nested transitive) to a minimum or series-capped version (Go/npm/pnpm/yarn/Cargo/Maven), before a later `vendor` step re-vendors. Transitive deps are forced via the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm.overrides`, yarn `resolutions`, cargo `--precise`). Plain `version: "0.39.0"` means `>=0.39.0` (no upper bound); tilde `version: "~4.18.2"` means `>=4.18.2` capped to the `4.18.x` series |
-| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive from the source workspace |
+| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven/Gradle vendor archive from the source workspace |
 | `build-ui` | Run `npm`/`yarn run <script>` and archive the build output directory |
 | `run` | Escape hatch: an arbitrary command, with declared output paths archived as new artifacts afterward |
 | `pack` | Archive an explicit list of files already in `--package-dir` into a single deterministic tarball, each at its own relative path |
@@ -173,6 +173,23 @@ transform:
 bytes into the step's cwd (the same idiom as `post:`'s `artifacts:` below).
 Use it when a script needs the archive itself rather than `target:`'s
 extracted view.
+
+For Gradle, gorget runs the configured `task` (default: `build`) with
+`GRADLE_USER_HOME` set to `vendor/`, then archives the populated Gradle user
+home. It uses `./gradlew` when the project includes the Gradle wrapper and
+otherwise uses `gradle`. For example, Gradle's own source tree should use its
+distribution task:
+
+```yaml
+transform:
+  - type: vendor
+    ecosystem: gradle
+    task: ":distributions-full:binDistributionZip"
+```
+
+A later build can use the extracted directory as `GRADLE_USER_HOME` and pass
+`--offline`. Gradle then fails if the build needs a dependency that the first
+build did not resolve.
 
 ### `verify:`
 
@@ -393,7 +410,7 @@ fails closed otherwise.
 
 ```yaml
 toolchain:
-  - name: node      # one of: go, node, npm, cargo, rustc, python, maven
+  - name: node      # one of: go, node, npm, cargo, rustc, python, maven, gradle
     version: "24"   # selected version stream; component-wise prefix match
     minimum-version: "24.16"  # optional inclusive version floor
 ```
