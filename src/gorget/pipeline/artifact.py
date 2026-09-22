@@ -13,6 +13,11 @@ from gorget.util.checksum import compute_digest
 ArtifactKind = Literal["input", "derived"]
 
 
+def derived_artifact_path(work_dir: Path, producer: str, output_name: str) -> Path:
+    """Return a path in the derivation namespace for a publication artifact."""
+    return work_dir / "_derived" / producer / output_name
+
+
 @dataclass(frozen=True, kw_only=True)
 class ArtifactRef:
     output_name: str

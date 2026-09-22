@@ -7,7 +7,11 @@ from pathlib import Path
 
 from gorget.config.schema import StripTarballStep
 from gorget.exceptions import GorgetConfigError
-from gorget.pipeline.artifact import Artifact, build_derived_artifact
+from gorget.pipeline.artifact import (
+    Artifact,
+    build_derived_artifact,
+    derived_artifact_path,
+)
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.util.archive import extract_tar_gz, repack_tar_gz
@@ -25,8 +29,8 @@ class StripTarballHandler:
 
         if target.checksum is None:
             raise AssertionError("non-dry-run artifacts must have a checksum")
-        new_path = (
-            ctx.work_dir / "_derived" / "strip-tarball" / target.checksum / target.output_name
+        new_path = derived_artifact_path(
+            ctx.work_dir, f"strip-tarball/{target.checksum}", target.output_name
         )
         repack_tar_gz(extract_dir, new_path)
         replacement = build_derived_artifact(

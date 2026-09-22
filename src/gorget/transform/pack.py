@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from gorget.config.schema import PackStep
 from gorget.exceptions import GorgetConfigError
-from gorget.pipeline.artifact import build_derived_artifact
+from gorget.pipeline.artifact import build_derived_artifact, derived_artifact_path
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.util.archive import pack_files
@@ -32,7 +32,7 @@ class PackHandler:
                 raise GorgetConfigError(f"pack: file not found: {src}")
             files.append((src, rel))
 
-        dest = ctx.work_dir / step.output
+        dest = derived_artifact_path(ctx.work_dir, "pack", step.output)
         pack_files(files, dest)
 
         description = f"pack:{', '.join(step.files)}"

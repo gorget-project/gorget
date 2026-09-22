@@ -2,10 +2,7 @@
 declared output paths collected as new artifacts afterward. `outputs:` covers
 names known upfront; `discovered-outputs:` covers names only known once the
 command has run (e.g. a version string it discovered from the source tree).
-`artifacts:` materializes already-fetched artifacts' raw bytes into the
-step's cwd, e.g. for checksum-verifying one before a later transform step in
-the same list mutates it (verify: only runs after all of transform:, so it
-can't see pristine bytes once something upstream has already changed them).
+`artifacts:` materializes publication artifacts' raw bytes into the step's cwd.
 """
 
 from __future__ import annotations
@@ -15,7 +12,7 @@ from pathlib import Path
 
 from gorget.config.schema import RunStep
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.pipeline.artifact import build_derived_artifact
+from gorget.pipeline.artifact import build_derived_artifact, derived_artifact_path
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
 from gorget.transform.base import TransformContext, ensure_source_dir
@@ -54,11 +51,11 @@ class RunHandler:
             name = Path(output).name
             if output_path.is_dir():
                 archive_name = f"{name}.tar.gz"
-                dest = ctx.work_dir / archive_name
+                dest = derived_artifact_path(ctx.work_dir, "run", archive_name)
                 repack_tar_gz(output_path, dest)
             else:
                 archive_name = name
-                dest = ctx.work_dir / archive_name
+                dest = derived_artifact_path(ctx.work_dir, "run", archive_name)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(output_path, dest)
 
@@ -99,7 +96,7 @@ class RunHandler:
                     f"{manifest_path} line {line_no}: discovered output not found: {src_path}"
                 )
 
-            dest = ctx.work_dir / output_name
+            dest = derived_artifact_path(ctx.work_dir, "run", output_name)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src_path, dest)
 

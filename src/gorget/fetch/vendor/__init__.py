@@ -19,7 +19,7 @@ from gorget.fetch.vendor.maven import MavenVendor
 from gorget.fetch.vendor.npm import NpmVendor
 from gorget.fetch.vendor.pnpm import PnpmVendor
 from gorget.fetch.vendor.yarn import YarnVendor
-from gorget.pipeline.artifact import Artifact, build_derived_artifact
+from gorget.pipeline.artifact import Artifact, build_derived_artifact, derived_artifact_path
 from gorget.util.git import commit_timestamp
 
 _ECOSYSTEMS: dict[str, VendorEcosystem] = {
@@ -37,7 +37,7 @@ class VendorHandler:
     def run(self, step: VendorStep, ctx: VendorRunContext) -> list[Artifact]:
         ecosystem = _ECOSYSTEMS[step.ecosystem]
         archive_name = step.archive_name or f"{ctx.vars.package}-vendor.tar.gz"
-        archive_path = ctx.work_dir / archive_name
+        archive_path = derived_artifact_path(ctx.work_dir, "vendor", archive_name)
 
         if not ctx.dry_run:
             if ctx.source_dir is None:
