@@ -25,6 +25,7 @@ from gorget.fetch.base import FetchedArtifact
 from gorget.fetch.vendor import VendorHandler
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
+from gorget.policy.base import resolve_vendored_modules
 from gorget.transform.base import TransformContext, finalize_source_artifact
 from gorget.transform.build_ui import BuildUiHandler
 from gorget.transform.pack import PackHandler
@@ -44,6 +45,8 @@ class _VendorStepAdapter:
     def run(self, step: VendorStep, ctx: TransformContext, state: StageState) -> None:
         artifacts: list[FetchedArtifact] = _vendor_handler.run(step, ctx)
         state.artifacts.extend(artifacts)
+        if ctx.source_dir is not None:
+            state.vendored_modules.extend(resolve_vendored_modules(step, ctx.source_dir))
         if step.sync_go_modules:
             state.source_dirty = True
 

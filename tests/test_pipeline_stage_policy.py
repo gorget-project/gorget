@@ -17,6 +17,7 @@ from gorget.exceptions import GorgetPolicyViolation
 from gorget.pipeline.result import PipelineReport
 from gorget.pipeline.stages.policy import PolicyStage
 from gorget.pipeline.state import StageState
+from gorget.policy.base import VendoredModule
 
 
 def make_ctx(package_dir, dry_run=False):
@@ -33,9 +34,20 @@ def make_ctx(package_dir, dry_run=False):
     )
 
 
-def make_state(work_dir, source_dir=None):
+def make_state(work_dir, source_dir=None, ecosystem=None):
     report = PipelineReport(package="foo", version="1.2.3", old_version=None, dry_run=False)
-    return StageState(work_dir=work_dir, spec=None, report=report, source_dir=source_dir)
+    modules = (
+        [VendoredModule(ecosystem=ecosystem, path=source_dir)]
+        if source_dir is not None and ecosystem is not None
+        else []
+    )
+    return StageState(
+        work_dir=work_dir,
+        spec=None,
+        report=report,
+        source_dir=source_dir,
+        vendored_modules=modules,
+    )
 
 
 def write_npm_package(source_dir, package, license_value, version="2.17.5"):
@@ -66,7 +78,7 @@ def test_no_policy_configured_skips_with_warning(tmp_path):
 def test_vendor_constraints_success(tmp_path):
     write_npm_package(tmp_path, "sanitize-html", "MIT", version="2.17.5")
     ctx = make_ctx(tmp_path)
-    state = make_state(tmp_path, source_dir=tmp_path)
+    state = make_state(tmp_path, source_dir=tmp_path, ecosystem="npm")
     spec = PipelineSpec(
         fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
         policy=PolicySection(
@@ -92,7 +104,7 @@ def test_vendor_constraints_success(tmp_path):
 def test_vendor_constraints_failure_raises_policy_violation(tmp_path):
     write_npm_package(tmp_path, "sanitize-html", "MIT", version="2.16.0")
     ctx = make_ctx(tmp_path)
-    state = make_state(tmp_path, source_dir=tmp_path)
+    state = make_state(tmp_path, source_dir=tmp_path, ecosystem="npm")
     spec = PipelineSpec(
         fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
         policy=PolicySection(
@@ -115,7 +127,7 @@ def test_audit_go_mod_verify_fails_closed(tmp_path, mocker):
         ),
     )
     ctx = make_ctx(tmp_path)
-    state = make_state(tmp_path, source_dir=tmp_path)
+    state = make_state(tmp_path, source_dir=tmp_path, ecosystem="go")
     spec = PipelineSpec(
         fetch=[VendorStep(ecosystem="go", modules=[VendorModule(path=".")])],
         policy=PolicySection(audit=True),
@@ -133,7 +145,7 @@ def test_audit_npm_warning_does_not_raise(tmp_path, mocker):
         ),
     )
     ctx = make_ctx(tmp_path)
-    state = make_state(tmp_path, source_dir=tmp_path)
+    state = make_state(tmp_path, source_dir=tmp_path, ecosystem="npm")
     spec = PipelineSpec(
         fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
         policy=PolicySection(audit=True),
@@ -146,7 +158,7 @@ def test_audit_npm_warning_does_not_raise(tmp_path, mocker):
 def test_license_compliance_failure_raises(tmp_path):
     write_npm_package(tmp_path, "bad-pkg", "GPL-3.0-only")
     ctx = make_ctx(tmp_path)
-    state = make_state(tmp_path, source_dir=tmp_path)
+    state = make_state(tmp_path, source_dir=tmp_path, ecosystem="npm")
     spec = PipelineSpec(
         fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
         policy=PolicySection(
@@ -161,7 +173,7 @@ def test_multiple_failures_are_all_reported_together(tmp_path):
     write_npm_package(tmp_path, "sanitize-html", "MIT", version="2.16.0")
     write_npm_package(tmp_path, "bad-pkg", "GPL-3.0-only")
     ctx = make_ctx(tmp_path)
-    state = make_state(tmp_path, source_dir=tmp_path)
+    state = make_state(tmp_path, source_dir=tmp_path, ecosystem="npm")
     spec = PipelineSpec(
         fetch=[VendorStep(ecosystem="npm", modules=[VendorModule(path=".")])],
         policy=PolicySection(

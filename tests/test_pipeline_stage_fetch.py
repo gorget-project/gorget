@@ -93,6 +93,9 @@ def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mo
         mocker.call(["go", "mod", "tidy"], cwd=state.source_dir, env={"GOWORK": "off"}),
         mocker.call(["go", "mod", "vendor"], cwd=state.source_dir, env={"GOWORK": "off"}),
     ]
+    assert [(module.ecosystem, module.path) for module in state.vendored_modules] == [
+        ("go", state.source_dir)
+    ]
 
 
 def test_fetch_stage_rejects_sync_go_modules(tmp_path):

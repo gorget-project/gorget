@@ -132,6 +132,9 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
         mocker.call(["go", "mod", "tidy"], cwd=source_dir, env={"GOWORK": "off"}),
         mocker.call(["go", "mod", "vendor"], cwd=source_dir, env={"GOWORK": "off"}),
     ]
+    assert [(module.ecosystem, module.path) for module in state.vendored_modules] == [
+        ("go", source_dir)
+    ]
 
 
 def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, mocker):
