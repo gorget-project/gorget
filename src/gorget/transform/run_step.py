@@ -22,12 +22,15 @@ from gorget.util.subprocess_run import run
 
 class RunHandler:
     def run(self, step: RunStep, ctx: TransformContext, state: StageState) -> None:
-        # Unlike build-ui/vendor (one fixed, known-ahead-of-time archive name), a
-        # `run:` step's declared outputs could each be a file or a directory --
-        # which one isn't knowable without actually running the command. So,
-        # unlike those steps, dry-run here produces no placeholder artifacts at
-        # all rather than guessing.
+        description = f"run:{' '.join(step.command)}"
         if ctx.dry_run:
+            for output in step.outputs:
+                name = Path(output).name
+                state.plan_derived_artifact_alternatives(
+                    (name, f"{name}.tar.gz"), description, "run"
+                )
+            if step.discovered_outputs is not None:
+                state.plan_dynamic_artifacts(f"{description} (discovered)")
             return
 
         source_dir = ensure_source_dir(ctx, state, step.target)
@@ -59,7 +62,6 @@ class RunHandler:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(output_path, dest)
 
-            description = f"run:{' '.join(step.command)}"
             state.add_derived_artifact(
                 build_derived_artifact(dest, archive_name, description, ctx.dry_run)
             )

@@ -68,12 +68,6 @@ class PipelineRunner:
 
                     for stage_cls in STAGE_ORDER:
                         current_stage_name = getattr(stage_cls, "name", str(stage_cls))
-                        if stage_cls is EmitStage and self.ctx.dry_run:
-                            logger.debug("stage emit: skipped (dry-run)")
-                            report.stages.append(
-                                StageResult(name="emit", status="skipped", reason="dry-run")
-                            )
-                            continue
                         logger.debug("stage %s: starting", current_stage_name)
                         result = stage_cls().run(self.ctx, self.spec, state)
                         logger.debug("stage %s: %s", result.name, result.status)

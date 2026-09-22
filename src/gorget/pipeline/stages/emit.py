@@ -14,6 +14,7 @@ from gorget.config.schema import PipelineSpec
 from gorget.constants import CHECKSUM_ALGO, SOURCES_MANIFEST_FILENAME
 from gorget.context import RunContext
 from gorget.exceptions import GorgetTransientError
+from gorget.pipeline.publication import select_publications
 from gorget.pipeline.result import StageResult, write_report_json
 from gorget.pipeline.state import StageState
 from gorget.util.checksum import format_sources_manifest
@@ -23,8 +24,19 @@ class EmitStage:
     name: ClassVar[str] = "emit"
 
     def run(self, ctx: RunContext, spec: PipelineSpec, state: StageState) -> StageResult:
+        if ctx.dry_run and spec.publish is not None:
+            state.resolve_dynamic_artifacts(spec.publish.files)
+        selected = select_publications(
+            state.artifacts,
+            spec.publish,
+            state.artifact_plans if ctx.dry_run else (),
+        )
+        state.report.artifacts = selected
+        if ctx.dry_run:
+            return StageResult(name=self.name, status="skipped", reason="dry-run")
+
         publications = [
-            artifact for artifact in state.artifacts if artifact.checksum is not None
+            artifact for artifact in selected if artifact.checksum is not None
         ]
 
         own_result = StageResult(name=self.name, status="success")

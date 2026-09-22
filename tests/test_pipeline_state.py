@@ -78,3 +78,45 @@ def test_add_derived_artifact_rejects_existing_output_name(tmp_path):
         state.add_derived_artifact(make_derived_artifact("source.tar.gz"))
 
     assert state.artifacts == [existing]
+
+
+def test_exact_plan_rejects_existing_artifact_name(tmp_path):
+    state = make_state(tmp_path, [make_artifact("source.tar.gz")])
+
+    with pytest.raises(GorgetConfigError, match="unique output names"):
+        state.plan_derived_artifact("source.tar.gz", "pack:file", "pack")
+
+    assert state.artifact_plans == []
+
+
+def test_exact_plans_reject_duplicate_names_from_same_producer(tmp_path):
+    state = make_state(tmp_path)
+    state.plan_derived_artifact("source.tar.gz", "pack:file", "pack")
+
+    with pytest.raises(GorgetConfigError, match="unique output names"):
+        state.plan_derived_artifact("source.tar.gz", "pack:file", "pack")
+
+    assert len(state.artifact_plans) == 1
+
+
+def test_alternative_plan_can_avoid_existing_name(tmp_path):
+    state = make_state(tmp_path, [make_artifact("dist")])
+
+    state.plan_derived_artifact_alternatives(
+        ["dist", "dist.tar.gz"], "run:generate", "run"
+    )
+
+    assert state.artifact_plans[0].output_names == ("dist", "dist.tar.gz")
+
+
+def test_alternative_plans_do_not_report_avoidable_duplicate(tmp_path):
+    state = make_state(tmp_path)
+
+    state.plan_derived_artifact_alternatives(
+        ["dist", "dist.tar.gz"], "run:first", "run"
+    )
+    state.plan_derived_artifact_alternatives(
+        ["dist", "dist.tar.gz"], "run:second", "run"
+    )
+
+    assert len(state.artifact_plans) == 2

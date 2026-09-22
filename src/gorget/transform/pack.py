@@ -22,7 +22,9 @@ from gorget.util.archive import pack_files
 
 class PackHandler:
     def run(self, step: PackStep, ctx: TransformContext, state: StageState) -> None:
+        description = f"pack:{', '.join(step.files)}"
         if ctx.dry_run:
+            state.plan_derived_artifact(step.output, description, "pack")
             return
 
         files = []
@@ -35,7 +37,6 @@ class PackHandler:
         dest = derived_artifact_path(ctx.work_dir, "pack", step.output)
         pack_files(files, dest)
 
-        description = f"pack:{', '.join(step.files)}"
         state.add_derived_artifact(
             build_derived_artifact(dest, step.output, description, ctx.dry_run)
         )
