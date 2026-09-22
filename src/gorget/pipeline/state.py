@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.base import FetchedArtifact
+from gorget.pipeline.artifact import Artifact
 from gorget.pipeline.result import PipelineReport
 from gorget.specfile import SpecFile
 
@@ -16,7 +16,7 @@ class StageState:
     work_dir: Path
     spec: SpecFile
     report: PipelineReport
-    artifacts: list[FetchedArtifact] = field(default_factory=list)
+    artifacts: list[Artifact] = field(default_factory=list)
     # Set by FetchStage after a `git` step clones a checkout, so Transform can
     # reuse it (e.g. for `vendor-bump`/`vendor`/`build-ui`/`run` steps) without
     # re-extracting a tarball.
@@ -27,7 +27,7 @@ class StageState:
     # bumping a lockfile), TransformStage repacks this artifact once at the end
     # so the shipped source tarball matches what later steps (e.g. `vendor`)
     # built against.
-    source_artifact: FetchedArtifact | None = None
+    source_artifact: Artifact | None = None
     # True when `source_dir` is a bare git checkout (files at its root, so a
     # repack must re-wrap them under the tarball's internal top-level dir);
     # False when it's an extracted tarball tree (that wrapper dir is already
@@ -43,7 +43,7 @@ class StageState:
         # no separate "collect artifacts into the report" step needed anywhere.
         self.report.artifacts = self.artifacts
 
-    def find_artifact(self, output_name: str) -> FetchedArtifact:
+    def find_artifact(self, output_name: str) -> Artifact:
         for artifact in self.artifacts:
             if artifact.output_name == output_name:
                 return artifact

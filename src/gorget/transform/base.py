@@ -1,7 +1,7 @@
 """Shared context for transform step handlers.
 
 Unlike `fetch/base.py`'s `FetchStepHandler` (uniform `run(step, ctx) -> list[
-FetchedArtifact]`), transform handlers take the shared `run(step, ctx, state) ->
+Artifact]`), transform handlers take the shared `run(step, ctx, state) ->
 None` shape and mutate `state` directly -- the primitives are genuinely
 heterogeneous (strip-tarball replaces an existing artifact, vendor-bump touches
 neither the artifact list nor produces one, build-ui/run append new artifacts),
@@ -17,7 +17,7 @@ from typing import Protocol
 from gorget.config.schema import ToolchainEntry, TransformStep
 from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.base import build_artifact
+from gorget.pipeline.artifact import build_artifact
 from gorget.pipeline.state import StageState
 from gorget.util.archive import extract_tar_gz, make_tar_gz, repack_tar_gz, strip_archive_suffix
 from gorget.util.git import commit_timestamp
@@ -99,7 +99,7 @@ def finalize_source_artifact(state: StageState, *, dry_run: bool) -> None:
         )
     else:
         repack_tar_gz(state.source_dir, artifact.path)
-    # FetchedArtifact is frozen and its checksum changed, so replace it in place.
+    # Artifact is frozen and its checksum changed, so replace it in place.
     for index, existing in enumerate(state.artifacts):
         if existing.output_name == artifact.output_name:
             rebuilt = build_artifact(

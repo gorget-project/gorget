@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from gorget.config.schema import PackStep
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.base import build_artifact
+from gorget.pipeline.artifact import build_artifact
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.util.archive import pack_files

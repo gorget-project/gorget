@@ -9,7 +9,7 @@ from pathlib import Path
 
 from gorget.config.schema import StripTarballStep
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.base import FetchedArtifact, build_artifact
+from gorget.pipeline.artifact import Artifact, build_artifact
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.util.archive import extract_tar_gz, repack_tar_gz
@@ -30,7 +30,7 @@ class StripTarballHandler:
         _replace_artifact(state, target.output_name, new_path)
 
 
-def _select_target(target_name: str | None, artifacts: list[FetchedArtifact]) -> FetchedArtifact:
+def _select_target(target_name: str | None, artifacts: list[Artifact]) -> Artifact:
     if target_name is not None:
         for artifact in artifacts:
             if artifact.output_name == target_name:

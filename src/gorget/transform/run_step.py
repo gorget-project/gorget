@@ -15,7 +15,7 @@ from pathlib import Path
 
 from gorget.config.schema import RunStep
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.fetch.base import build_artifact
+from gorget.pipeline.artifact import build_artifact
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
 from gorget.transform.base import TransformContext, ensure_source_dir

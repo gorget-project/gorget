@@ -21,8 +21,8 @@ from gorget.config.schema import (
     VendorStep,
 )
 from gorget.context import RunContext
-from gorget.fetch.base import FetchedArtifact
 from gorget.fetch.vendor import VendorHandler
+from gorget.pipeline.artifact import Artifact
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext, finalize_source_artifact
@@ -37,12 +37,12 @@ _vendor_handler = VendorHandler()
 
 class _VendorStepAdapter:
     """Adapts the Fetch stage's `VendorHandler` (`run(step, ctx) ->
-    list[FetchedArtifact]`) to Transform's `run(step, ctx, state) -> None` shape,
+    list[Artifact]`) to Transform's `run(step, ctx, state) -> None` shape,
     so `VendorHandler` itself needs no changes to be reused here.
     """
 
     def run(self, step: VendorStep, ctx: TransformContext, state: StageState) -> None:
-        artifacts: list[FetchedArtifact] = _vendor_handler.run(step, ctx)
+        artifacts: list[Artifact] = _vendor_handler.run(step, ctx)
         state.artifacts.extend(artifacts)
         if step.sync_go_modules:
             state.source_dirty = True

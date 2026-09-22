@@ -5,11 +5,12 @@ spec's work-dir copy before any `spec-source` step resolves Source URLs.
 from __future__ import annotations
 
 from gorget.config.schema import SpecUpdateStep
-from gorget.fetch.base import FetchContext, FetchedArtifact
+from gorget.fetch.base import FetchContext
+from gorget.pipeline.artifact import Artifact
 
 
 class SpecUpdateHandler:
-    def run(self, step: SpecUpdateStep, ctx: FetchContext) -> list[FetchedArtifact]:
+    def run(self, step: SpecUpdateStep, ctx: FetchContext) -> list[Artifact]:
         if step.set_version:
             ctx.spec.set_version(ctx.vars.version)
         if step.reset_release is not None:

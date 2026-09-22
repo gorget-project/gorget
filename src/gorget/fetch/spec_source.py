@@ -9,12 +9,13 @@ from urllib.parse import urlparse
 
 from gorget.config.schema import SpecSourceStep
 from gorget.exceptions import GorgetConfigError
-from gorget.fetch.base import FetchContext, FetchedArtifact, build_artifact
+from gorget.fetch.base import FetchContext
+from gorget.pipeline.artifact import Artifact, build_artifact
 from gorget.util.download import download_to
 
 
 class SpecSourceHandler:
-    def run(self, step: SpecSourceStep, ctx: FetchContext) -> list[FetchedArtifact]:
+    def run(self, step: SpecSourceStep, ctx: FetchContext) -> list[Artifact]:
         entries = ctx.spec.sources()
         if step.index is None:
             targets = entries
