@@ -75,9 +75,5 @@ class FetchStage:
             # artifact is the source tarball backing that checkout. Record it so
             # a later transform step editing the checkout can repack it.
             if source_dir_before is None and fetch_ctx.source_dir is not None and artifacts:
-                state.source_artifact = artifacts[0]
-                state.source_is_checkout = True
-        # Survives past this method's return (unlike `fetch_ctx` itself) so a
-        # later Transform stage can reuse the same checkout.
-        state.source_dir = fetch_ctx.source_dir
+                state.source.attach_checkout(fetch_ctx.source_dir, artifacts[0])
         return StageResult(name=self.name, status="success")

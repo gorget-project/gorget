@@ -40,6 +40,6 @@ class BuildUiHandler:
                 archive_name,
                 f"build-ui:{step.ecosystem}",
                 ctx.dry_run,
-                parents=[state.source_artifact] if state.source_artifact is not None else (),
+                parents=[state.source.artifact] if state.source.artifact is not None else (),
             )
         )

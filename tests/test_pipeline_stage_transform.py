@@ -40,7 +40,8 @@ def make_run_ctx(package_dir, dry_run=False):
 def make_state(work_dir, artifacts=(), source_dir=None):
     report = PipelineReport(package="foo", version="1.2.3", old_version=None, dry_run=False)
     state = StageState(work_dir=work_dir, spec=Mock(), report=report, artifacts=list(artifacts))
-    state.source_dir = source_dir
+    if source_dir is not None:
+        state.source.attach_tree(source_dir)
     return state
 
 
@@ -147,6 +148,7 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
     (package_dir / "foo.spec").write_text("Name: foo\n")
     archive = tmp_path / "foo-1.2.3.tar.gz"
     make_tar_gz(source_dir, archive, arcname="foo-1.2.3", mtime=1700000000)
+    input_bytes = archive.read_bytes()
     artifact = build_artifact(archive, archive.name, "repo", dry_run=False)
 
     def fake_go_vendor(args, cwd=None, env=None):
@@ -161,11 +163,10 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
 
     mocker.patch("gorget.fetch.vendor.go.run", side_effect=fake_go_vendor)
     mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
-    mocker.patch("gorget.transform.base.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.pipeline.source.commit_timestamp", return_value=1700000000)
     ctx = make_run_ctx(package_dir)
     state = make_state(tmp_path / "work", artifacts=[artifact], source_dir=source_dir)
-    state.source_artifact = artifact
-    state.source_is_checkout = True
+    state.source.attach_checkout(source_dir, artifact)
     spec = PipelineSpec(
         transform=TransformSection(
             steps=[VendorStep(ecosystem="go", sync_go_modules=True)]
@@ -177,11 +178,14 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
     assert (source_dir / "go.mod").read_text().endswith("require x v0.39.0\n")
     assert (source_dir / "go.sum").read_text() == "new checksum\n"
     assert not (source_dir / "vendor").exists()
-    with tarfile.open(archive) as source_archive:
+    assert archive.read_bytes() == input_bytes
+    assert state.source.artifact is state.artifacts[0]
+    assert state.source.artifact.kind == "derived"
+    with tarfile.open(state.source.artifact.path) as source_archive:
         names = source_archive.getnames()
         assert "foo-1.2.3/go.mod" in names
         assert not any("/vendor/" in name for name in names)
-    assert state.source_dirty is False
+    assert state.source.dirty is False
 
 
 def test_syncs_source_dir_back_to_state_after_extraction(tmp_path, mocker):
@@ -207,5 +211,5 @@ def test_syncs_source_dir_back_to_state_after_extraction(tmp_path, mocker):
 
     TransformStage().run(ctx, spec, state)
 
-    assert state.source_dir is not None
-    assert (state.source_dir / "pkg" / "go.mod").exists()
+    assert state.source.path is not None
+    assert (state.source.path / "pkg" / "go.mod").exists()

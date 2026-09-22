@@ -35,7 +35,10 @@ def make_ctx(package_dir, dry_run=False):
 
 def make_state(work_dir, source_dir=None):
     report = PipelineReport(package="foo", version="1.2.3", old_version=None, dry_run=False)
-    return StageState(work_dir=work_dir, spec=None, report=report, source_dir=source_dir)
+    state = StageState(work_dir=work_dir, spec=None, report=report)
+    if source_dir is not None:
+        state.source.attach_tree(source_dir)
+    return state
 
 
 def write_npm_package(source_dir, package, license_value, version="2.17.5"):

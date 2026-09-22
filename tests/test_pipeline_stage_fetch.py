@@ -51,15 +51,15 @@ def test_fetch_stage_syncs_source_dir_into_state(tmp_path, mocker):
 
     FetchStage().run(ctx, spec, state)
 
-    assert state.source_dir is not None
-    assert (state.source_dir / "README.md").exists()
+    assert state.source.path is not None
+    assert (state.source.path / "README.md").exists()
 
 
 def test_fetch_stage_leaves_source_dir_none_without_git_step(tmp_path):
     ctx = make_run_ctx(tmp_path)
     state = make_state(tmp_path / "work")
     FetchStage().run(ctx, PipelineSpec(), state)
-    assert state.source_dir is None
+    assert state.source.path is None
 
 
 def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mocker):
@@ -90,8 +90,8 @@ def test_fetch_stage_toolchain_param_does_not_change_vendor_command(tmp_path, mo
     # `go mod tidy` runs before `go mod vendor` by default (matching
     # go-vendor-tools' own default), even with no go-vendor-tools.toml present.
     assert mock_go_run.call_args_list == [
-        mocker.call(["go", "mod", "tidy"], cwd=state.source_dir, env={"GOWORK": "off"}),
-        mocker.call(["go", "mod", "vendor"], cwd=state.source_dir, env={"GOWORK": "off"}),
+        mocker.call(["go", "mod", "tidy"], cwd=state.source.path, env={"GOWORK": "off"}),
+        mocker.call(["go", "mod", "vendor"], cwd=state.source.path, env={"GOWORK": "off"}),
     ]
 
 
