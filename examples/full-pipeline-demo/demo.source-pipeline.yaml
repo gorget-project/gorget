@@ -32,8 +32,7 @@ transform:
       - dependency: "rsc.io/quote"
         version: "v1.5.2"
 
-  # Re-vendor now that vendor-bump has bumped the dependency -- vendor is a
-  # legal step under both fetch: and transform:, reused unchanged either way.
+  # Re-vendor now that vendor-bump has bumped the dependency.
   - type: vendor
     ecosystem: go
 
@@ -89,3 +88,15 @@ policy:
       ecosystem: go
       version: "1.5.2"
       reason: "demo: confirms the vendor-bump above actually took effect"
+
+publish:
+  files:
+    - "demo-main.tar.gz"
+    - "hello-2.12.1.tar.gz"
+    - "hello-2.12.1.tar.gz.sig"
+    - "${PACKAGE}-vendor.tar.gz"
+    - "${PACKAGE}-ui-assets.tar.gz"
+    - "go-version.txt"
+    - "node-version.txt"
+    - "env-node-version.txt"
+    - "demo-packaging-scripts.tar.gz"

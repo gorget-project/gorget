@@ -23,3 +23,8 @@ transform:
     # Source1 expects. Nothing cross-checks the two agree; pick a
     # convention and keep the spec in sync by hand.
     archive_name: "${PACKAGE}-${VERSION}-vendor.tar.xz"
+
+publish:
+  files:
+    - "${PACKAGE}-${VERSION}.tar.gz"
+    - "${PACKAGE}-${VERSION}-vendor.tar.xz"

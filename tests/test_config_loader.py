@@ -56,6 +56,9 @@ def test_build_pipeline_spec_full_schema_round_trips():
     assert spec.transform.steps[0].ecosystem == "go"
     assert isinstance(spec.transform.steps[1], StripTarballStep)
     assert spec.transform.steps[1].paths == ["docs/"]
+    assert spec.publish == PublishSection(
+        files=["example-1.2.3.tar.gz", "example-vendor.tar.gz"]
+    )
     assert len(spec.toolchain.entries) == 1
     assert spec.toolchain.entries[0].name == "go"
     assert spec.toolchain.entries[0].version == "1.22"
@@ -94,6 +97,15 @@ def test_full_pipeline_example_declares_node24_toolchain():
     assert spec.toolchain.entries == [
         ToolchainEntry(name="node", version="24", minimum_version="24.16")
     ]
+
+
+@pytest.mark.parametrize(
+    "pipeline_file",
+    sorted(EXAMPLES.glob("*/*.source-pipeline.yaml")),
+    ids=lambda path: f"{path.parent.name}/{path.name}",
+)
+def test_example_pipeline_parses(pipeline_file):
+    build_pipeline_spec(pipeline_file, substitution_vars=make_vars())
 
 
 def test_build_pipeline_spec_fetch_only():

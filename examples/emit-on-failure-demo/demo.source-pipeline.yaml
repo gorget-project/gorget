@@ -11,3 +11,7 @@ verify:
     target: "hello-2.12.1.tar.gz"
     signature: "hello-2.12.1.tar.gz.sig"
     keyring: "some-key.asc"
+
+publish:
+  files:
+    - "hello-2.12.1.tar.gz"

@@ -23,3 +23,8 @@ verify:
     target: "hello-${VERSION}.tar.gz"
     signature: "hello-${VERSION}.tar.gz.sig"
     keyring: "hello-maintainer.asc"
+
+publish:
+  files:
+    - "hello-${VERSION}.tar.gz"
+    - "hello-${VERSION}.tar.gz.sig"

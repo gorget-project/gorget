@@ -169,13 +169,10 @@ transform:
     discovered-outputs: "discovered.tsv"   # each line: "<output_name>\t<path>"
 ```
 
-`run:`'s `artifacts:` materializes already-fetched artifacts' raw,
-unextracted bytes into the step's cwd (the same idiom as `post:`'s
-`artifacts:` below) -- for a script that needs to read an artifact directly
-rather than through `target:`'s extracted view, e.g. checksum-verifying it
-manually before a later step in the same `transform:` list mutates it
-(`verify:` always runs after all of `transform:`, so it can't see pristine
-bytes once something upstream in `transform:` has already changed them).
+`run:`'s `artifacts:` materializes publication artifacts' raw, unextracted
+bytes into the step's cwd (the same idiom as `post:`'s `artifacts:` below).
+Use it when a script needs the archive itself rather than `target:`'s
+extracted view.
 
 ### `verify:`
 
@@ -224,6 +221,27 @@ All verification failures across all checks -- re-publication and declared
 at the first failure, so a single run surfaces everything wrong at once.
 `report.json`'s `verify` stage includes a `details` list with the per-check
 type/target/status/reason.
+
+### `publish:`
+
+Selects the exact artifact filenames that Emit writes to `--output-dir` and
+the `sources` manifest. The order in `files` is preserved.
+
+```yaml
+publish:
+  files:
+    - "${PACKAGE}-${VERSION}.tar.gz"
+    - "${PACKAGE}-${VERSION}-vendor.tar.xz"
+```
+
+Gorget fails if a listed file was not produced or appears more than once.
+Produced files that are not listed remain available to earlier stages, but
+Emit does not write them. An explicit empty list emits an empty `sources`
+manifest.
+
+Pipelines without `publish:` keep the previous behavior and emit every
+produced artifact. Gorget logs a deprecation warning for this compatibility
+mode. A later release will require the section.
 
 ### `accepted-checksums:`
 

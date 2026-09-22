@@ -47,6 +47,10 @@ post:
   - type: run
     artifacts: ["extra.tar.gz"]
     command: ["./generate-bundled-provides.py", "${VERSION}"]
+publish:
+  files:
+    - "${PACKAGE}-${VERSION}.tar.gz"
+    - "${PACKAGE}-vendor.tar.gz"
 accepted-checksums:
   - file: "example-1.2.2.tar.gz"
     checksum: "deadbeef"
