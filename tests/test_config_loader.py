@@ -135,9 +135,25 @@ def test_unknown_fetch_type_raises_config_error():
         build_pipeline_spec(FIXTURES / "unknown-fetch-type.yaml", substitution_vars=make_vars())
 
 
-def test_vendor_is_not_a_fetch_step():
-    with pytest.raises(GorgetConfigError, match="Unknown fetch step type: 'vendor'"):
-        parse_pipeline_spec({"fetch": [{"type": "vendor", "ecosystem": "go"}]})
+def test_legacy_fetch_vendor_moves_to_transform_and_warns(caplog):
+    with caplog.at_level("WARNING", logger="gorget.config.loader"):
+        spec = parse_pipeline_spec(
+            {
+                "fetch": [
+                    {
+                        "type": "git",
+                        "repo": "https://example.test/project.git",
+                        "ref": "v1.2.3",
+                    },
+                    {"type": "vendor", "ecosystem": "go"},
+                ]
+            }
+        )
+
+    assert len(spec.fetch) == 1
+    assert isinstance(spec.fetch[0], GitStep)
+    assert spec.transform.steps == [VendorStep(ecosystem="go")]
+    assert "Deprecated pipeline syntax" in caplog.text
 
 
 def test_transform_strip_tarball_step_parses():

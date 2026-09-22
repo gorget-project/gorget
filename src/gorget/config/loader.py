@@ -12,6 +12,7 @@ from pathlib import Path
 
 import yaml
 
+from gorget.config.compat import move_fetch_vendor_steps
 from gorget.config.schema import (
     FETCH_STEP_TYPES,
     POST_STEP_TYPES,
@@ -214,6 +215,14 @@ def _parse_accepted_checksum_entry(raw_entry: object) -> AcceptedChecksumEntry:
 
 
 def parse_pipeline_spec(raw: dict) -> PipelineSpec:
+    raw, moved_vendor_steps = move_fetch_vendor_steps(raw)
+    if moved_vendor_steps:
+        logger.warning(
+            "Deprecated pipeline syntax: moved %d vendor step(s) from fetch to "
+            "transform; declare vendor steps under 'transform:' instead",
+            moved_vendor_steps,
+        )
+
     unknown_keys = set(raw) - _KNOWN_TOP_LEVEL_KEYS
     for key in sorted(unknown_keys):
         logger.warning("Ignoring unknown top-level pipeline YAML key: %s", key)

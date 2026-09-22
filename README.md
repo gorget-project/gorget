@@ -143,6 +143,10 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 | `run` | Escape hatch: an arbitrary command, with declared output paths archived as new artifacts afterward |
 | `pack` | Archive an explicit list of files already in `--package-dir` into a single deterministic tarball, each at its own relative path |
 
+For compatibility, gorget still accepts `vendor` entries under `fetch:` and
+moves them before the declared transform steps. This syntax is deprecated;
+new and updated pipelines should declare vendoring under `transform:`.
+
 `vendor-bump`/`vendor`/`build-ui`/`run` all operate against a shared working
 source tree: a `git` fetch step's checkout if one ran, otherwise the sole
 fetched artifact gets extracted on first use (an error if there's more than
