@@ -19,6 +19,7 @@ class MavenVendor:
         package_dir: Path | None = None,
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
+        task: str = "build",
     ) -> Path:
         if not (module_dir / "pom.xml").is_file():
             raise GorgetConfigError(f"maven vendor: no pom.xml found in {module_dir}")

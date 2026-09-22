@@ -18,6 +18,7 @@ class NpmVendor:
         package_dir: Path | None = None,
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
+        task: str = "build",
     ) -> Path:
         resolved = platforms or _DEFAULT_NPM_PLATFORMS
         cache_dir = module_dir / ".npm-cache"

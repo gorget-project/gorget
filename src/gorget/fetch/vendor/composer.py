@@ -17,6 +17,7 @@ class ComposerVendor:
         package_dir: Path | None = None,
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
+        task: str = "build",
     ) -> Path:
         # --optimize-autoloader dumps a flattened classmap covering the root
         # package's own PSR-4 classes as well as vendored ones (composer's

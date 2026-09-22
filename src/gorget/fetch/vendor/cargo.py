@@ -17,6 +17,7 @@ class CargoVendor:
         package_dir: Path | None = None,
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
+        task: str = "build",
     ) -> Path:
         vendor_dir = module_dir / "vendor"
         cmd = ["cargo", "vendor", str(vendor_dir)]

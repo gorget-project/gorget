@@ -89,7 +89,11 @@ _DEFAULT_NPM_PLATFORMS: list[VendorPlatform] = [
 @dataclass(frozen=True, kw_only=True)
 class VendorStep:
     type: Literal["vendor"] = "vendor"
-    ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo", "composer", "maven"]
+    ecosystem: Literal[
+        "go", "npm", "pnpm", "yarn", "cargo", "composer", "maven", "gradle"
+    ]
+    # Gradle-specific task. Other ecosystems ignore this value.
+    task: str = "build"
     archive_name: str | None = None
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
     platforms: list[VendorPlatform] | None = None
