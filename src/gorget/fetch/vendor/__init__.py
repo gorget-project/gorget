@@ -24,7 +24,7 @@ from gorget.fetch.vendor.maven import MavenVendor
 from gorget.fetch.vendor.npm import NpmVendor
 from gorget.fetch.vendor.pnpm import PnpmVendor
 from gorget.fetch.vendor.yarn import YarnVendor
-from gorget.pipeline.artifact import Artifact, build_artifact
+from gorget.pipeline.artifact import Artifact, build_derived_artifact
 from gorget.util.git import commit_timestamp
 
 _ECOSYSTEMS: dict[str, VendorEcosystem] = {
@@ -98,7 +98,14 @@ class VendorHandler:
                 module_outputs, archive_path, mtime=mtime, root_files=root_files
             )
 
-        return [build_artifact(archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run)]
+        return [
+            build_derived_artifact(
+                archive_path,
+                archive_name,
+                f"vendor:{step.ecosystem}",
+                ctx.dry_run,
+            )
+        ]
 
     @staticmethod
     def _vendor_module(

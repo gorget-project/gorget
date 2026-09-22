@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from gorget.config.schema import BuildUiStep
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.pipeline.artifact import build_artifact
+from gorget.pipeline.artifact import build_derived_artifact
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
 from gorget.transform.base import TransformContext, ensure_source_dir
@@ -35,5 +35,11 @@ class BuildUiHandler:
             repack_tar_gz(output_dir, archive_path)
 
         state.artifacts.append(
-            build_artifact(archive_path, archive_name, f"build-ui:{step.ecosystem}", ctx.dry_run)
+            build_derived_artifact(
+                archive_path,
+                archive_name,
+                f"build-ui:{step.ecosystem}",
+                ctx.dry_run,
+                parents=[state.source_artifact] if state.source_artifact is not None else (),
+            )
         )

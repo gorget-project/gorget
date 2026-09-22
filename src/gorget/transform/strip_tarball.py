@@ -9,7 +9,7 @@ from pathlib import Path
 
 from gorget.config.schema import StripTarballStep
 from gorget.exceptions import GorgetConfigError
-from gorget.pipeline.artifact import Artifact, build_artifact
+from gorget.pipeline.artifact import Artifact, build_derived_artifact
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.util.archive import extract_tar_gz, repack_tar_gz
@@ -61,7 +61,11 @@ def _remove_paths(extract_dir: Path, patterns: list[str]) -> None:
 def _replace_artifact(state: StageState, output_name: str, new_path: Path) -> None:
     for index, artifact in enumerate(state.artifacts):
         if artifact.output_name == output_name:
-            state.artifacts[index] = build_artifact(
-                new_path, output_name, artifact.source_description, dry_run=False
+            state.artifacts[index] = build_derived_artifact(
+                new_path,
+                output_name,
+                artifact.source_description,
+                dry_run=False,
+                parents=[artifact],
             )
             return

@@ -17,7 +17,7 @@ from typing import Protocol
 from gorget.config.schema import ToolchainEntry, TransformStep
 from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError
-from gorget.pipeline.artifact import build_artifact
+from gorget.pipeline.artifact import build_derived_artifact
 from gorget.pipeline.state import StageState
 from gorget.util.archive import extract_tar_gz, make_tar_gz, repack_tar_gz, strip_archive_suffix
 from gorget.util.git import commit_timestamp
@@ -102,8 +102,12 @@ def finalize_source_artifact(state: StageState, *, dry_run: bool) -> None:
     # Artifact is frozen and its checksum changed, so replace it in place.
     for index, existing in enumerate(state.artifacts):
         if existing.output_name == artifact.output_name:
-            rebuilt = build_artifact(
-                artifact.path, artifact.output_name, existing.source_description, dry_run=False
+            rebuilt = build_derived_artifact(
+                artifact.path,
+                artifact.output_name,
+                existing.source_description,
+                dry_run=False,
+                parents=[existing],
             )
             state.artifacts[index] = rebuilt
             state.source_artifact = rebuilt

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from gorget.config.schema import RunStep
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.pipeline.artifact import build_artifact
+from gorget.pipeline.artifact import build_derived_artifact
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
 from gorget.transform.base import TransformContext, ensure_source_dir
@@ -63,7 +63,9 @@ class RunHandler:
                 shutil.copyfile(output_path, dest)
 
             description = f"run:{' '.join(step.command)}"
-            state.artifacts.append(build_artifact(dest, archive_name, description, ctx.dry_run))
+            state.artifacts.append(
+                build_derived_artifact(dest, archive_name, description, ctx.dry_run)
+            )
 
         if step.discovered_outputs is not None:
             self._collect_discovered_outputs(step, step.discovered_outputs, cwd, ctx, state)
@@ -102,4 +104,6 @@ class RunHandler:
             shutil.copyfile(src_path, dest)
 
             description = f"run:{' '.join(step.command)} (discovered)"
-            state.artifacts.append(build_artifact(dest, output_name, description, ctx.dry_run))
+            state.artifacts.append(
+                build_derived_artifact(dest, output_name, description, ctx.dry_run)
+            )

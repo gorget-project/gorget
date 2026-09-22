@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from gorget.config.schema import PackStep
 from gorget.exceptions import GorgetConfigError
-from gorget.pipeline.artifact import build_artifact
+from gorget.pipeline.artifact import build_derived_artifact
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.util.archive import pack_files
@@ -36,4 +36,6 @@ class PackHandler:
         pack_files(files, dest)
 
         description = f"pack:{', '.join(step.files)}"
-        state.artifacts.append(build_artifact(dest, step.output, description, ctx.dry_run))
+        state.artifacts.append(
+            build_derived_artifact(dest, step.output, description, ctx.dry_run)
+        )
