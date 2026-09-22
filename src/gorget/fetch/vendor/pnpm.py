@@ -30,13 +30,18 @@ class PnpmVendor:
                 for platform in resolved:
                     cmd = [
                         "pnpm", "fetch",
-                        "--ignore-scripts", "--frozen-lockfile",
+                        "--ignore-scripts",
                         "--store-dir", str(store_dir),
-                        "--cpu", platform.cpu,
-                        "--os", platform.os,
                     ]
                     result = run(
-                        wrap_command(cmd, toolchain), cwd=module_dir, env={"CI": "true"}
+                        wrap_command(cmd, toolchain),
+                        cwd=module_dir,
+                        env={
+                            "CI": "true",
+                            "npm_config_cpu": platform.cpu,
+                            "npm_config_os": platform.os,
+                            "npm_config_libc": platform.libc,
+                        },
                     )
                     if result.returncode != 0:
                         raise GorgetTransientError(
