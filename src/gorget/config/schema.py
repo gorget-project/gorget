@@ -333,6 +333,11 @@ class PostSection:
 
 
 @dataclass(frozen=True, kw_only=True)
+class PublishSection:
+    files: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, kw_only=True)
 class PipelineSpec:
     package: str | None = None
     fetch: list[FetchStep] = field(default_factory=list)
@@ -342,6 +347,9 @@ class PipelineSpec:
     policy: PolicySection = field(default_factory=PolicySection)
     patches: PatchesSection = field(default_factory=PatchesSection)
     post: PostSection = field(default_factory=PostSection)
+    # None preserves the legacy behavior: Emit publishes every artifact.
+    # An explicit empty section publishes no artifacts.
+    publish: PublishSection | None = None
     accepted_checksums: AcceptedChecksumsSection = field(
         default_factory=AcceptedChecksumsSection
     )

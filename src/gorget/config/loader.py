@@ -28,6 +28,7 @@ from gorget.config.schema import (
     PolicySection,
     PostSection,
     PostStep,
+    PublishSection,
     ToolchainEntry,
     ToolchainSection,
     TransformSection,
@@ -53,6 +54,7 @@ _KNOWN_TOP_LEVEL_KEYS = {
     "policy",
     "patches",
     "post",
+    "publish",
     "accepted-checksums",
 }
 
@@ -214,6 +216,26 @@ def _parse_accepted_checksum_entry(raw_entry: object) -> AcceptedChecksumEntry:
         raise GorgetConfigError(f"Invalid accepted-checksums entry: {exc}") from exc
 
 
+def _parse_publish_section(raw: dict) -> PublishSection | None:
+    if "publish" not in raw:
+        return None
+
+    raw_publish = raw["publish"]
+    if not isinstance(raw_publish, dict):
+        raise GorgetConfigError("The 'publish' section must be a mapping")
+
+    unknown_keys = set(raw_publish) - {"files"}
+    if unknown_keys:
+        raise GorgetConfigError(
+            f"Unknown publish key(s): {', '.join(sorted(unknown_keys))}"
+        )
+
+    files = raw_publish.get("files", [])
+    if not isinstance(files, list) or not all(isinstance(item, str) for item in files):
+        raise GorgetConfigError("'publish.files' must be a list of filenames")
+    return PublishSection(files=files)
+
+
 def parse_pipeline_spec(raw: dict) -> PipelineSpec:
     raw, moved_vendor_steps = move_fetch_vendor_steps(raw)
     if moved_vendor_steps:
@@ -268,6 +290,7 @@ def parse_pipeline_spec(raw: dict) -> PipelineSpec:
         policy=_parse_policy_section(raw),
         patches=_parse_list_section(raw, "patches", PatchesSection, "entries"),
         post=PostSection(steps=post_steps),
+        publish=_parse_publish_section(raw),
         accepted_checksums=AcceptedChecksumsSection(entries=accepted_checksum_entries),
     )
 

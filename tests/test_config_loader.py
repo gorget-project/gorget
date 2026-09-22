@@ -10,6 +10,7 @@ from gorget.config.schema import (
     GitStep,
     GpgSignatureStep,
     PostRunStep,
+    PublishSection,
     RunStep,
     SpecSourceStep,
     SpecUpdateStep,
@@ -98,6 +99,37 @@ def test_full_pipeline_example_declares_node24_toolchain():
 def test_build_pipeline_spec_fetch_only():
     spec = build_pipeline_spec(FIXTURES / "fetch-only.yaml", substitution_vars=make_vars())
     assert spec.fetch == [SpecSourceStep(index=0)]
+    assert spec.publish is None
+
+
+def test_publish_section_parses_filenames():
+    spec = parse_pipeline_spec(
+        {"publish": {"files": ["foo-1.2.3.tar.gz", "foo-1.2.3-vendor.tar.xz"]}}
+    )
+
+    assert spec.publish == PublishSection(
+        files=["foo-1.2.3.tar.gz", "foo-1.2.3-vendor.tar.xz"]
+    )
+
+
+def test_explicit_empty_publish_section_is_not_legacy_default():
+    spec = parse_pipeline_spec({"publish": {"files": []}})
+
+    assert spec.publish == PublishSection(files=[])
+
+
+@pytest.mark.parametrize(
+    ("publish", "message"),
+    [
+        ([], "must be a mapping"),
+        ({"files": "foo.tar.gz"}, "must be a list of filenames"),
+        ({"files": [1]}, "must be a list of filenames"),
+        ({"unknown": []}, "Unknown publish key"),
+    ],
+)
+def test_invalid_publish_section_raises_config_error(publish, message):
+    with pytest.raises(GorgetConfigError, match=message):
+        parse_pipeline_spec({"publish": publish})
 
 
 def test_git_fetch_allow_version_change_parses():
