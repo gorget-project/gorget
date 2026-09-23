@@ -98,7 +98,8 @@ fetch:
 
 For pnpm packages built offline, set `offline-cache: true` on the existing
 `vendor` step. Gorget reads the exact `pnpm@...` version from the module's
-`package.json`, bundles that CLI with `.pnpm-store` and `.pnpm-cache`, and
+`package.json`, bundles that CLI with a working `.bin/pnpm` shim,
+`.pnpm-store`, and `.pnpm-cache`, and
 adds full registry metadata for names in `metadata-packages:` when absent from
 pnpm's install-generated cache. A frozen lockfile gives pnpm exact versions
 and integrity hashes, so the install can fetch package contents without asking

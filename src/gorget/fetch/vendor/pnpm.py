@@ -133,6 +133,15 @@ class PnpmVendor:
             pnpm_mjs = pnpm_root / "node_modules/pnpm/bin/pnpm.mjs"
             pnpm_wrapper = pnpm_root / "node_modules/.bin/pnpm"
             if pnpm_mjs.is_file():
+                # The pnpm package's install hook normally repairs this npm
+                # shim. Install pnpm with scripts disabled, then create a
+                # working shim for project scripts that invoke pnpm again.
+                pnpm_wrapper.unlink(missing_ok=True)
+                pnpm_wrapper.write_text(
+                    "#!/bin/sh\n"
+                    'exec node "$(dirname "$0")/../pnpm/bin/pnpm.mjs" "$@"\n'
+                )
+                pnpm_wrapper.chmod(0o755)
                 pnpm_command = ["node", str(pnpm_mjs)]
             elif pnpm_wrapper.is_file():
                 pnpm_command = [str(pnpm_wrapper)]
