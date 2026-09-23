@@ -96,6 +96,31 @@ transform:
                                      # only; see combine.py for etcd's case)
 ```
 
+For pnpm packages built offline, set `offline-cache: true` on the existing
+`vendor` step. Gorget reads the exact `pnpm@...` version from the module's
+`package.json`, bundles that CLI with `.pnpm-store` and `.pnpm-cache`, and
+fills full registry metadata entries absent from pnpm's install-generated
+cache. The archive contains `.pnpm`, `.pnpm-store`, and `.pnpm-cache` at its
+root. Gorget runs the install once per declared platform, using the existing
+`platforms:` option to populate one store for all targets. This mode requires
+one module and does not change the default pnpm vendor archive.
+
+```yaml
+fetch:
+  - type: git
+    repo: "${UPSTREAM_REPO}"
+    ref: "v${VERSION}"
+    submodules: full
+
+transform:
+  - type: vendor
+    ecosystem: pnpm
+    modules:
+      - path: jaeger-ui
+    archive_name: "jaeger-ui-pnpm-cache-${VERSION}.tar.bz2"
+    offline-cache: true
+```
+
 `git`'s `archive_name` defaults to `${PACKAGE}-${VERSION}.tar.gz` if
 omitted. `vendor`'s default is **not** analogous -- `${PACKAGE}-vendor.tar.gz`,
 with no version and always gzip -- so a pipeline that wants a versioned
