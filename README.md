@@ -65,7 +65,7 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `spec-source` | Download the spec's `Source0`/`SourceN` URLs (macro-resolved), by index or all |
 | `url` | Download an explicit URL not declared in the spec |
 | `git` | Clone a repo at a tag/branch/commit (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
-| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm) |
+| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm); pnpm also supports a bundled offline cache |
 
 `git` (or another real fetch step) is mandatory for a **native package** (no
 Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
@@ -94,6 +94,30 @@ fetch:
       - path: "."                  # module rooted at the checkout itself
         name: null                  # explicit label (multi-module archives
                                      # only; see combine.py for etcd's case)
+```
+
+For pnpm packages built offline, set `offline-cache: true` on the existing
+`vendor` step. Gorget reads the exact `pnpm@...` version from the module's
+`package.json`, bundles that CLI with `.pnpm-store` and `.pnpm-cache`, and
+fills full registry metadata entries absent from pnpm's install-generated
+cache. The archive contains `.pnpm`, `.pnpm-store`, and `.pnpm-cache` at its
+root. Gorget runs the install once per declared platform, using the existing
+`platforms:` option to populate one store for all targets. This mode requires
+one module and does not change the default pnpm vendor archive.
+
+```yaml
+fetch:
+  - type: git
+    repo: "${UPSTREAM_REPO}"
+    ref: "v${VERSION}"
+    submodules: full
+
+  - type: vendor
+    ecosystem: pnpm
+    modules:
+      - path: jaeger-ui
+    archive_name: "jaeger-ui-pnpm-cache-${VERSION}.tar.bz2"
+    offline-cache: true
 ```
 
 `git`'s `archive_name` defaults to `${PACKAGE}-${VERSION}.tar.gz` if

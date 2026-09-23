@@ -44,6 +44,34 @@ class VendorHandler:
         archive_name = step.archive_name or f"{ctx.vars.package}-vendor.tar.gz"
         archive_path = ctx.work_dir / archive_name
 
+        if step.offline_cache:
+            if step.ecosystem != "pnpm":
+                raise GorgetConfigError("offline-cache is only supported for ecosystem: pnpm")
+            if step.sync_go_modules:
+                raise GorgetConfigError("offline-cache cannot be combined with sync-go-modules")
+            if len(step.modules) != 1:
+                raise GorgetConfigError("pnpm offline-cache requires exactly one module")
+            if not ctx.dry_run:
+                if ctx.source_dir is None:
+                    raise GorgetConfigError(
+                        "A pnpm offline-cache step requires a preceding 'git' step"
+                    )
+                module_dir = ctx.source_dir / step.modules[0].path
+                cast(PnpmVendor, ecosystem).offline_cache(
+                    module_dir,
+                    archive_path,
+                    ctx.toolchain,
+                    step.platforms or (),
+                )
+            return [
+                build_artifact(
+                    archive_path,
+                    archive_name,
+                    "vendor:pnpm offline-cache",
+                    ctx.dry_run,
+                )
+            ]
+
         if not ctx.dry_run:
             if ctx.source_dir is None:
                 raise GorgetConfigError(

@@ -98,6 +98,10 @@ class VendorStep:
     # Source0 and repack it. This keeps Source0 and vendor/modules.txt in
     # agreement when go-vendor-tools.toml applies dependency overrides.
     sync_go_modules: bool = False
+    # pnpm-only mode: bundle the exact packageManager CLI declared by the
+    # module, its content-addressed store, and registry metadata for offline
+    # builds. The default pnpm vendor archive remains unchanged.
+    offline_cache: bool = False
 
 
 FetchStep = SpecUpdateStep | SpecSourceStep | UrlStep | GitStep | VendorStep
