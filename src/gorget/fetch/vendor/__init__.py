@@ -62,6 +62,7 @@ class VendorHandler:
                     archive_path,
                     ctx.toolchain,
                     step.platforms or (),
+                    step.metadata_packages,
                 )
             return [
                 build_artifact(

@@ -102,6 +102,9 @@ class VendorStep:
     # module, its content-addressed store, and registry metadata for offline
     # builds. The default pnpm vendor archive remains unchanged.
     offline_cache: bool = False
+    # pnpm-only full registry packuments the offline build needs but the frozen
+    # install may not fetch. Names use npm syntax, including package scopes.
+    metadata_packages: list[str] = field(default_factory=list)
 
 
 FetchStep = SpecUpdateStep | SpecSourceStep | UrlStep | GitStep | VendorStep

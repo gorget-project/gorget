@@ -15,7 +15,6 @@ from urllib.request import Request, urlopen
 from gorget.config.schema import _DEFAULT_NPM_PLATFORMS, ToolchainEntry, VendorPlatform
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.fetch.vendor.lockfile import PACKAGE_NAME_RE as _PACKAGE_NAME_RE
-from gorget.fetch.vendor.lockfile import pnpm_provides
 from gorget.toolchain import wrap_command
 from gorget.util.archive import pack_files
 from gorget.util.subprocess_run import run
@@ -67,6 +66,7 @@ class PnpmVendor:
         archive_path: Path,
         toolchain: Sequence[ToolchainEntry] = (),
         platforms: Sequence[VendorPlatform] = (),
+        metadata_packages: Sequence[str] = (),
     ) -> None:
         """Build an offline bundle with the module's pinned pnpm CLI, store,
         and registry metadata. Work from a scratch copy so fetch never edits
@@ -175,7 +175,7 @@ class PnpmVendor:
                     shutil.rmtree(node_modules)
 
             self._complete_metadata_cache(
-                lockfile_path,
+                metadata_packages,
                 cache_dir,
                 scratch_module,
                 toolchain,
@@ -191,22 +191,17 @@ class PnpmVendor:
 
     def _complete_metadata_cache(
         self,
-        lockfile: Path,
+        packages: Sequence[str],
         cache_dir: Path,
         module_dir: Path,
         toolchain: Sequence[ToolchainEntry],
     ) -> None:
         """Fill full packument entries missing from pnpm's generated cache.
 
-        pnpm can install a frozen lockfile without persisting full metadata for
-        every locked package. Offline builds may still need those packuments
-        while resolving the lockfile, so add only missing entries.
+        Some offline builds need full packuments that pnpm did not persist.
+        Add only the package names declared by the pipeline and skip entries
+        that the install already cached.
         """
-        try:
-            _, packages = pnpm_provides(lockfile)
-        except (OSError, ValueError) as exc:
-            raise GorgetConfigError(f"Could not read pnpm lockfile {lockfile}: {exc}") from exc
-
         metadata_roots = list(cache_dir.rglob("metadata-full"))
         if not metadata_roots:
             version_dirs = list((cache_dir / "pnpm").glob("v*"))
@@ -220,9 +215,11 @@ class PnpmVendor:
             )
 
         registries: dict[str, str] = {}
-        for package_name, _version in sorted(packages):
+        for package_name in sorted(set(packages)):
             if not _PACKAGE_NAME_RE.fullmatch(package_name):
-                continue
+                raise GorgetConfigError(
+                    f"Invalid npm package name in metadata-packages: {package_name!r}"
+                )
             scope = package_name.split("/", 1)[0] if package_name.startswith("@") else ""
             registry = registries.get(scope)
             if registry is None:
