@@ -3,8 +3,8 @@ import subprocess
 import pytest
 
 from gorget.config.schema import VendorPlatform
-from gorget.exceptions import GorgetTransientError
-from gorget.fetch.vendor.pnpm import PnpmVendor
+from gorget.exceptions import GorgetConfigError, GorgetTransientError
+from gorget.fetch.vendor.pnpm import PnpmVendor, _resolve_pnpm_version
 
 
 def _ok(args=None):
@@ -62,3 +62,40 @@ def test_pnpm_vendor_creates_store_dir(tmp_path, mocker):
     mocker.patch("gorget.fetch.vendor.pnpm.run", return_value=_ok())
     PnpmVendor().vendor(tmp_path)
     assert (tmp_path / ".pnpm-store").is_dir()
+
+
+@pytest.mark.parametrize(
+    ("manifest", "expected"),
+    [
+        ({"packageManager": "pnpm@12.5.1+sha512.abc"}, "12.5.1"),
+        ({"devEngines": {"packageManager": {"name": "pnpm", "version": "12.3.4"}}}, "12.3.4"),
+        (
+            {
+                "packageManager": "pnpm@11.20.0",
+                "devEngines": {"packageManager": {"name": "pnpm", "version": "12.3.4"}},
+            },
+            "11.20.0",
+        ),
+    ],
+)
+def test_resolve_pnpm_version_uses_exact_pin(tmp_path, mocker, manifest, expected):
+    mock_run = mocker.patch("gorget.fetch.vendor.pnpm.run")
+    assert _resolve_pnpm_version(manifest, tmp_path / "package.json", tmp_path, ()) == expected
+    mock_run.assert_not_called()
+
+
+def test_resolve_pnpm_version_uses_configured_pnpm(tmp_path, mocker):
+    mock_run = mocker.patch(
+        "gorget.fetch.vendor.pnpm.run",
+        return_value=subprocess.CompletedProcess([], 0, "10.20.0\n", ""),
+    )
+    manifest = {"devEngines": {"packageManager": {"name": "pnpm", "version": "^10"}}}
+    assert _resolve_pnpm_version(manifest, tmp_path / "package.json", tmp_path, ()) == "10.20.0"
+    mock_run.assert_called_once_with(["pnpm", "--version"], cwd=tmp_path)
+
+
+def test_resolve_pnpm_version_rejects_other_manager(tmp_path):
+    with pytest.raises(GorgetConfigError, match="Invalid pnpm packageManager"):
+        _resolve_pnpm_version(
+            {"packageManager": "yarn@4.1.0"}, tmp_path / "package.json", tmp_path, ()
+        )

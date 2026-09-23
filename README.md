@@ -97,15 +97,17 @@ fetch:
 ```
 
 For pnpm packages, `offline-cache` defaults to true. Gorget reads the exact
-`pnpm@...` version from `package.json`, bundles that CLI with a working
-`.bin/pnpm` shim, `.pnpm-store`, and `.pnpm-cache`, and adds full registry
-metadata for names in `metadata-packages:` when absent from pnpm's
+`pnpm@...` version from `package.json` when present. It also reads an exact
+`devEngines.packageManager` pnpm version. If neither field sets an exact
+version, Gorget uses the configured pnpm executable. Gorget bundles that CLI
+with a working `.bin/pnpm` shim, `.pnpm-store`, and `.pnpm-cache`. It adds full
+registry metadata for names in `metadata-packages:` when absent from pnpm's
 install-generated cache. A frozen lockfile gives pnpm exact versions and
 integrity hashes, so the install can fetch package contents without asking the
 registry for every package's full version catalog. The archive contains
 `.pnpm`, `.pnpm-store`, and `.pnpm-cache` at its root. Gorget runs the install
-once per declared platform, using the existing `platforms:` option to populate
-one store for all targets. This mode requires one module. Set
+once per declared platform with pnpm 10.14 or later. Older pnpm versions use
+`--force` to fetch optional packages for all platforms. This mode requires one module. Set
 `offline-cache: false` to use the legacy store-only vendor archive.
 Use that opt-out only when the consumer does not need an offline pnpm install.
 Set `metadata-packages:` only for packages whose full registry metadata the

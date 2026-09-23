@@ -24,6 +24,41 @@ from gorget.util.subprocess_run import run
 _PACKAGE_MANAGER_RE = re.compile(
     r"^pnpm@(?P<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\+.*)?$"
 )
+_PNPM_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
+
+
+def _resolve_pnpm_version(
+    manifest: dict[str, object], manifest_path: Path,
+    module_dir: Path, toolchain: Sequence[ToolchainEntry],
+) -> str:
+    declared_manager = manifest.get("packageManager")
+    if declared_manager is not None:
+        match = _PACKAGE_MANAGER_RE.fullmatch(str(declared_manager))
+        if not match:
+            raise GorgetConfigError(
+                f"Invalid pnpm packageManager declaration in {manifest_path}: "
+                f"{declared_manager!r}"
+            )
+        return match.group("version")
+
+    dev_engines = manifest.get("devEngines")
+    dev_manager = dev_engines.get("packageManager") if isinstance(dev_engines, dict) else None
+    dev_version = (
+        dev_manager.get("version")
+        if isinstance(dev_manager, dict) and dev_manager.get("name") == "pnpm"
+        else None
+    )
+    if isinstance(dev_version, str) and _PNPM_VERSION_RE.fullmatch(dev_version):
+        return dev_version
+
+    result = run(wrap_command(["pnpm", "--version"], toolchain), cwd=module_dir)
+    version = result.stdout.strip()
+    if result.returncode != 0 or not _PNPM_VERSION_RE.fullmatch(version):
+        raise GorgetConfigError(
+            f"Could not determine pnpm version for {manifest_path}: "
+            f"{(result.stdout + result.stderr).strip()}"
+        )
+    return version
 
 
 class PnpmVendor:
@@ -84,14 +119,10 @@ class PnpmVendor:
             manifest = json.loads(manifest_path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
             raise GorgetConfigError(f"Could not read {manifest_path}: {exc}") from exc
-        declared_manager = manifest.get("packageManager")
-        match = _PACKAGE_MANAGER_RE.fullmatch(declared_manager or "")
-        if not match:
-            raise GorgetConfigError(
-                f"Invalid or missing pnpm packageManager declaration in {manifest_path}: "
-                f"{declared_manager!r}"
-            )
-        pnpm_version = match.group("version")
+        if not isinstance(manifest, dict):
+            raise GorgetConfigError(f"Expected an object in {manifest_path}")
+        pnpm_version = _resolve_pnpm_version(manifest, manifest_path, module_dir, toolchain)
+        major, minor = (int(part) for part in pnpm_version.split(".", 2)[:2])
 
         archive_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -109,7 +140,7 @@ class PnpmVendor:
             pnpm_root = root / ".pnpm"
             pnpm_root.mkdir()
             install_packages = [f"pnpm@{pnpm_version}"]
-            if int(pnpm_version.split(".", 1)[0]) >= 12:
+            if major >= 12:
                 # npm filters pnpm's optional native executable to the host
                 # architecture. Hummingbird builds both x64 and arm64 RPMs.
                 install_packages += [
@@ -156,7 +187,7 @@ class PnpmVendor:
             active_version = version_result.stdout.strip().removeprefix("v")
             if version_result.returncode != 0 or active_version != pnpm_version:
                 raise GorgetConfigError(
-                    f"Bundled pnpm version does not match packageManager {pnpm_version}: "
+                    f"Bundled pnpm version does not match {pnpm_version}: "
                     f"{(version_result.stdout + version_result.stderr).strip()}"
                 )
 
@@ -164,13 +195,22 @@ class PnpmVendor:
             store_dir.mkdir()
             cache_dir = root / ".pnpm-cache"
             cache_dir.mkdir()
-            for platform in platforms or _DEFAULT_NPM_PLATFORMS:
+            # Older pnpm versions lack platform flags. --force fetches all optional packages.
+            supports_platform_flags = (major, minor) >= (10, 14)
+            install_platforms = (
+                platforms or _DEFAULT_NPM_PLATFORMS if supports_platform_flags else (None,)
+            )
+            for platform in install_platforms:
+                platform_args = (
+                    ["--cpu", platform.cpu, "--os", platform.os, "--libc", platform.libc]
+                    if platform is not None else []
+                )
                 install_result = run(
                     wrap_command(
                         [
                             *pnpm_command, "install", "--force", "--ignore-scripts",
                             "--frozen-lockfile", "--store-dir", str(store_dir),
-                            "--cpu", platform.cpu, "--os", platform.os,
+                            *platform_args,
                         ],
                         toolchain,
                     ),
@@ -178,8 +218,9 @@ class PnpmVendor:
                     env={"CI": "true", "XDG_CACHE_HOME": str(cache_dir)},
                 )
                 if install_result.returncode != 0:
+                    target = f"{platform.cpu}/{platform.os}" if platform else "all platforms"
                     raise GorgetTransientError(
-                        f"pnpm install failed for {platform.cpu}/{platform.os} "
+                        f"pnpm install failed for {target} "
                         f"in {module_dir}: {install_result.stderr.strip()}"
                     )
                 node_modules = scratch_module / "node_modules"
