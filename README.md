@@ -109,7 +109,8 @@ one store for all targets. This mode requires one module. Set
 `offline-cache: false` to use the legacy store-only vendor archive.
 Use that opt-out only when the consumer does not need an offline pnpm install.
 Set `metadata-packages:` only for packages whose full registry metadata the
-offline build needs but the frozen install does not fetch.
+offline build needs but the frozen install does not fetch. This option supports
+pnpm 11 and 12.
 
 ```yaml
 fetch:

@@ -6,7 +6,9 @@ import shutil
 import tempfile
 import time
 from collections.abc import Sequence
+from datetime import UTC
 from email.utils import parsedate_to_datetime
+from hashlib import sha256
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import quote, urlparse
@@ -161,6 +163,7 @@ class PnpmVendor:
             store_dir = root / ".pnpm-store"
             store_dir.mkdir()
             cache_dir = root / ".pnpm-cache"
+            cache_dir.mkdir()
             for platform in platforms or _DEFAULT_NPM_PLATFORMS:
                 install_result = run(
                     wrap_command(
@@ -188,6 +191,7 @@ class PnpmVendor:
                 cache_dir,
                 scratch_module,
                 toolchain,
+                pnpm_version,
             )
             pack_files(
                 [
@@ -204,6 +208,7 @@ class PnpmVendor:
         cache_dir: Path,
         module_dir: Path,
         toolchain: Sequence[ToolchainEntry],
+        pnpm_version: str,
     ) -> None:
         """Fill full packument entries missing from pnpm's generated cache.
 
@@ -211,17 +216,15 @@ class PnpmVendor:
         Add only the package names declared by the pipeline and skip entries
         that the install already cached.
         """
-        metadata_roots = list(cache_dir.rglob("metadata-full"))
-        if not metadata_roots:
-            version_dirs = list((cache_dir / "pnpm").glob("v*"))
-            if version_dirs:
-                metadata_root = version_dirs[0] / "metadata-full"
-                metadata_root.mkdir(parents=True, exist_ok=True)
-                metadata_roots = [metadata_root]
-        if not metadata_roots:
+        if not packages:
+            return
+        major, minor = (int(part) for part in pnpm_version.split(".", 2)[:2])
+        if major not in (11, 12):
             raise GorgetConfigError(
-                f"pnpm did not create a full metadata cache under {cache_dir}"
+                f"metadata-packages requires pnpm 11 or 12; found pnpm {pnpm_version}"
             )
+        # pnpm 11 and 12 share the v11 metadata cache directory.
+        metadata_root = cache_dir / "pnpm" / "v11" / "metadata-full"
 
         registries: dict[str, str] = {}
         for package_name in sorted(set(packages)):
@@ -234,7 +237,9 @@ class PnpmVendor:
             if registry is None:
                 registry = self._registry_for(module_dir, scope, toolchain)
                 registries[scope] = registry
-            metadata_path = self._metadata_path(metadata_roots, registry, package_name)
+            metadata_path = self._metadata_path(
+                metadata_root, registry, package_name, (major, minor) >= (12, 4)
+            )
             if metadata_path.is_file():
                 continue
             self._download_packument(registry, package_name, metadata_path)
@@ -260,18 +265,37 @@ class PnpmVendor:
 
     @staticmethod
     def _metadata_path(
-        metadata_roots: list[Path], registry: str, package_name: str
+        metadata_root: Path, registry: str, package_name: str, path_aware: bool
     ) -> Path:
-        host = urlparse(registry).netloc
-        registry_dirs: list[Path] = []
-        for root in metadata_roots:
-            registry_dirs.extend(path for path in root.iterdir() if path.is_dir())
-        matching = [path for path in registry_dirs if path.name == host or host in path.name]
-        registry_dir = matching[0] if matching else metadata_roots[0] / host
-        package_parts = package_name.split("/")
-        if package_name.startswith("@"):
-            return registry_dir / package_parts[0] / f"{package_parts[1]}.jsonl"
-        return registry_dir / f"{package_name}.jsonl"
+        parsed = urlparse(registry)
+        if not parsed.hostname:
+            raise GorgetConfigError(f"Invalid npm registry URL: {registry!r}")
+        if path_aware:
+            registry_key = f"{parsed.scheme}%3A+{parsed.hostname}"
+            port = parsed.port
+            if port is not None and (parsed.scheme, port) not in {
+                ("http", 80), ("https", 443)
+            }:
+                registry_key += f"+{port}"
+            path = parsed.path.strip("/")
+            if path:
+                parts = [
+                    quote(part, safe="-._").replace("~", "%7E")
+                    for part in path.split("/")
+                ]
+                registry_key += "%2F" + "+".join(parts)
+                if path.lower() != path:
+                    registry_key += f"%5F{sha256(path.encode()).hexdigest()}"
+            if registry_key.endswith("."):
+                registry_key = f"{registry_key[:-1]}%2E"
+            if len(registry_key) > 255:
+                registry_key = sha256(registry_key.encode()).hexdigest()
+        else:
+            registry_key = parsed.netloc
+        encoded_name = package_name
+        if path_aware and package_name.lower() != package_name:
+            encoded_name += f"_{sha256(package_name.encode()).hexdigest()}"
+        return metadata_root / registry_key / f"{encoded_name}.jsonl"
 
     @staticmethod
     def _download_packument(registry: str, package_name: str, dest: Path) -> None:
@@ -284,16 +308,26 @@ class PnpmVendor:
                     etag = response.headers.get("ETag")
                     last_modified = response.headers.get("Last-Modified")
                 packument = json.loads(body)
-                if not etag or not last_modified or packument.get("name") != package_name:
+                if (
+                    not isinstance(packument, dict)
+                    or packument.get("name") != package_name
+                    or not isinstance(packument.get("versions"), dict)
+                ):
                     raise GorgetTransientError(
                         f"Invalid registry metadata for {package_name} from {url}"
                     )
-                modified = parsedate_to_datetime(last_modified).isoformat()
-                if modified.endswith("+00:00"):
-                    modified = f"{modified[:-6]}Z"
+                headers: dict[str, str] = {}
+                if etag:
+                    headers["etag"] = etag
+                if last_modified:
+                    modified = parsedate_to_datetime(last_modified)
+                    headers["modified"] = (
+                        modified.astimezone(UTC).isoformat().removesuffix("+00:00")
+                        + "Z"
+                    )
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(
-                    json.dumps({"etag": etag, "modified": modified}).encode()
+                    json.dumps(headers).encode()
                     + b"\n"
                     + body
                     + b"\n"

@@ -82,7 +82,8 @@ class VendorHandler:
             ]
         if step.metadata_packages:
             raise GorgetConfigError(
-                "metadata-packages requires pnpm offline-cache; remove it or set offline-cache: true"
+                "metadata-packages requires pnpm offline-cache; "
+                "remove it or set offline-cache: true"
             )
 
         if not ctx.dry_run:
