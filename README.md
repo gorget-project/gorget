@@ -65,7 +65,7 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `spec-source` | Download the spec's `Source0`/`SourceN` URLs (macro-resolved), by index or all |
 | `url` | Download an explicit URL not declared in the spec |
 | `git` | Clone a repo at a tag/branch/commit (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
-| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm) |
+| `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven vendor archive (multi-submodule aware, multi-arch for npm); pnpm also supports a bundled offline cache |
 
 `git` (or another real fetch step) is mandatory for a **native package** (no
 Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
@@ -94,6 +94,40 @@ fetch:
       - path: "."                  # module rooted at the checkout itself
         name: null                  # explicit label (multi-module archives
                                      # only; see combine.py for etcd's case)
+```
+
+For pnpm packages, `offline-cache` defaults to true. Gorget reads the exact
+`pnpm@...` version from `package.json` when present. It also reads an exact
+`devEngines.packageManager` pnpm version. If neither field sets an exact
+version, Gorget uses the configured pnpm executable. Gorget bundles that CLI
+with a working `.bin/pnpm` shim, `.pnpm-store`, and `.pnpm-cache`. It adds full
+registry metadata for names in `metadata-packages:` when absent from pnpm's
+install-generated cache. A frozen lockfile gives pnpm exact versions and
+integrity hashes, so the install can fetch package contents without asking the
+registry for every package's full version catalog. The archive contains
+`.pnpm`, `.pnpm-store`, and `.pnpm-cache` at its root. Gorget runs the install
+once per declared platform with pnpm 10.14 or later. Older pnpm versions use
+`--force` to fetch optional packages for all platforms. This mode requires one module. Set
+`offline-cache: false` to use the legacy store-only vendor archive.
+Use that opt-out only when the consumer does not need an offline pnpm install.
+Set `metadata-packages:` only for packages whose full registry metadata the
+offline build needs but the frozen install does not fetch. This option supports
+pnpm 11 and 12.
+
+```yaml
+fetch:
+  - type: git
+    repo: "${UPSTREAM_REPO}"
+    ref: "v${VERSION}"
+    submodules: full
+
+  - type: vendor
+    ecosystem: pnpm
+    modules:
+      - path: jaeger-ui
+    archive_name: "jaeger-ui-pnpm-cache-${VERSION}.tar.bz2"
+    metadata-packages:
+      - "@adobe/css-tools"
 ```
 
 `git`'s `archive_name` defaults to `${PACKAGE}-${VERSION}.tar.gz` if
