@@ -137,6 +137,7 @@ def test_npm_vendor_produces_cache_archive(tmp_path):
 PNPM_PACKAGE_JSON = """{
   "name": "test-app",
   "version": "1.0.0",
+  "packageManager": "pnpm@PNPM_VERSION",
   "dependencies": {
     "is-odd": "3.0.1"
   }
@@ -156,9 +157,14 @@ fetch:
 
 @pytest.mark.integration
 @requires_git
+@requires_npm
 @requires_pnpm
-def test_pnpm_vendor_produces_store_archive(tmp_path):
-    repo = _make_git_repo(tmp_path, {"package.json": PNPM_PACKAGE_JSON})
+def test_pnpm_vendor_defaults_to_offline_cache(tmp_path):
+    pnpm_version = subprocess.run(
+        ["pnpm", "--version"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    package_json = PNPM_PACKAGE_JSON.replace("PNPM_VERSION", pnpm_version)
+    repo = _make_git_repo(tmp_path, {"package.json": package_json})
     subprocess.run(["pnpm", "install", "--frozen-lockfile=false"], cwd=repo, capture_output=True)
     _run_git(["add", "."], repo)
     _run_git(["commit", "-m", "add lockfile"], repo)
@@ -179,7 +185,9 @@ def test_pnpm_vendor_produces_store_archive(tmp_path):
 
     with tarfile.open(archive, "r:bz2") as tar:
         names = tar.getnames()
-        assert len(names) > 0, "pnpm store archive is empty"
+        assert any(name.startswith(".pnpm/") for name in names)
+        assert any(name.startswith(".pnpm-store/") for name in names)
+        assert any(name.startswith(".pnpm-cache/") for name in names)
 
 
 # --- yarn ---

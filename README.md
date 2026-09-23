@@ -96,20 +96,20 @@ fetch:
                                      # only; see combine.py for etcd's case)
 ```
 
-For pnpm packages built offline, set `offline-cache: true` on the existing
-`vendor` step. Gorget reads the exact `pnpm@...` version from the module's
-`package.json`, bundles that CLI with a working `.bin/pnpm` shim,
-`.pnpm-store`, and `.pnpm-cache`, and
-adds full registry metadata for names in `metadata-packages:` when absent from
-pnpm's install-generated cache. A frozen lockfile gives pnpm exact versions
-and integrity hashes, so the install can fetch package contents without asking
-the registry for every package's full version catalog. The archive contains
+For pnpm packages, `offline-cache` defaults to true. Gorget reads the exact
+`pnpm@...` version from `package.json`, bundles that CLI with a working
+`.bin/pnpm` shim, `.pnpm-store`, and `.pnpm-cache`, and adds full registry
+metadata for names in `metadata-packages:` when absent from pnpm's
+install-generated cache. A frozen lockfile gives pnpm exact versions and
+integrity hashes, so the install can fetch package contents without asking the
+registry for every package's full version catalog. The archive contains
 `.pnpm`, `.pnpm-store`, and `.pnpm-cache` at its root. Gorget runs the install
 once per declared platform, using the existing `platforms:` option to populate
-one store for all targets. This mode requires one module and does not change
-the default pnpm vendor archive. Set
-`metadata-packages:` only for packages whose full registry metadata the offline
-build needs but the frozen install does not fetch.
+one store for all targets. This mode requires one module. Set
+`offline-cache: false` to use the legacy store-only vendor archive.
+Use that opt-out only when the consumer does not need an offline pnpm install.
+Set `metadata-packages:` only for packages whose full registry metadata the
+offline build needs but the frozen install does not fetch.
 
 ```yaml
 fetch:
@@ -123,7 +123,6 @@ fetch:
     modules:
       - path: jaeger-ui
     archive_name: "jaeger-ui-pnpm-cache-${VERSION}.tar.bz2"
-    offline-cache: true
     metadata-packages:
       - "@adobe/css-tools"
 ```
