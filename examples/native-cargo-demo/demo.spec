@@ -12,9 +12,9 @@ Source0:        demo-%{version}.tar.gz
 Source1:        demo-%{version}-vendor.tar.xz
 
 %description
-Demo package used to exercise gorget's minimal native-package Fetch pipeline
-(fetch: git + fetch: vendor, ecosystem: cargo) -- no spec-source, no verify,
-no transform, nothing else.
+Demo package used to exercise gorget's minimal native-package pipeline
+(fetch: git + transform: vendor, ecosystem: cargo) -- no spec-source, no
+verify, no policy, nothing else.
 
 %prep
 # -n must match the *archive's* internal top-level directory, which gorget's

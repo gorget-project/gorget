@@ -27,7 +27,8 @@ from pathlib import Path
 
 from gorget.config.schema import GitStep
 from gorget.exceptions import GorgetTransientError
-from gorget.fetch.base import FetchContext, FetchedArtifact, build_artifact
+from gorget.fetch.base import FetchContext
+from gorget.pipeline.artifact import Artifact, build_input_artifact
 from gorget.util.archive import make_tar_gz, strip_archive_suffix
 from gorget.util.git import commit_timestamp
 from gorget.util.subprocess_run import run
@@ -57,7 +58,7 @@ def _slug(repo_url: str) -> str:
 
 
 class GitHandler:
-    def run(self, step: GitStep, ctx: FetchContext) -> list[FetchedArtifact]:
+    def run(self, step: GitStep, ctx: FetchContext) -> list[Artifact]:
         archive_name = step.archive_name or f"{ctx.vars.package}-{ctx.vars.version}.tar.gz"
         archive_path = ctx.work_dir / archive_name
 
@@ -80,7 +81,7 @@ class GitHandler:
             make_tar_gz(src, archive_path, arcname=arcname, mtime=mtime)
 
         return [
-            build_artifact(
+            build_input_artifact(
                 archive_path,
                 archive_name,
                 f"{step.repo}@{step.ref}",

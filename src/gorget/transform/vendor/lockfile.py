@@ -1,7 +1,7 @@
 """Parse npm/pnpm/yarn lockfiles for bundled dependency provides.
 
 These are pure parsers over a lockfile on disk -- no vendoring, no network.
-The `bundled-provides` post step reads them straight from the fetched source
+The `bundled-provides` post step reads them from the generated vendor archive
 tree (each module's `package-lock.json`/`pnpm-lock.yaml`/`yarn.lock`) to
 generate the RPM `Provides: bundled(npm(...))` block, so the provides reflect
 whatever the tree actually locks (including any `vendor-bump` edits made

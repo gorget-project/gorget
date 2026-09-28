@@ -6,3 +6,6 @@
 toolchain:
   - name: go
     version: 999.999.999
+
+publish:
+  files: []

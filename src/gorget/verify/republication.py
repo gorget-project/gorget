@@ -1,7 +1,6 @@
-"""Re-publication detection: compare freshly-fetched artifacts against the
+"""Re-publication detection: compare current publication artifacts against the
 package's already-committed `sources` file (in /package, from Fedora dist-git),
-failing closed if upstream silently republished a same-named file with
-different content -- unless an accepted-checksums entry explicitly allows it.
+failing closed if a same-named file changed without an accepted-checksums entry.
 
 Always runs when `/package/sources` exists, regardless of whether any
 `verify:` steps are declared -- this is the core supply-chain safety net, not
@@ -79,6 +78,9 @@ def check_republication(
     accepted = {(entry.file, entry.checksum) for entry in accepted_entries}
 
     results = []
+    inputs_by_name = {
+        artifact.output_name: artifact for artifact in state.input_artifacts
+    }
     for artifact in state.artifacts:
         if artifact.output_name not in existing:
             continue  # new file (e.g. a version bump) -- nothing to compare
@@ -94,8 +96,9 @@ def check_republication(
         if actual_digest.lower() == existing_digest:
             continue  # unchanged
 
+        source = inputs_by_name.get(artifact.output_name, artifact)
         if (
-            artifact.allow_version_change
+            source.allow_version_change
             and ctx.vars.old_version is not None
             and ctx.vars.old_version != ctx.vars.version
         ):
@@ -130,12 +133,11 @@ def check_republication(
                 status="failed",
                 reason=(
                     f"{artifact.output_name} was already published with {existing_algo} "
-                    f"{existing_digest}, but the freshly fetched copy has {existing_algo} "
-                    f"{actual_digest} instead -- upstream may have silently republished "
-                    f"this file. If this is a legitimate re-publication, add to "
+                    f"{existing_digest}, but the current publication has {existing_algo} "
+                    f"{actual_digest} instead. If this change is legitimate, add it to "
                     f"accepted-checksums:\n"
                     f"{_suggest_accepted_checksums_block(artifact.output_name, artifact.checksum)}"
-                    f"{_version_change_hint(ctx, artifact)}"
+                    f"{_version_change_hint(ctx, source)}"
                 ),
             )
         )

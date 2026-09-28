@@ -40,7 +40,8 @@ def make_run_ctx(package_dir, dry_run=False):
 def make_state(work_dir, artifacts=(), source_dir=None):
     report = PipelineReport(package="foo", version="1.2.3", old_version=None, dry_run=False)
     state = StageState(work_dir=work_dir, spec=Mock(), report=report, artifacts=list(artifacts))
-    state.source_dir = source_dir
+    if source_dir is not None:
+        state.source.attach_tree(source_dir)
     return state
 
 
@@ -80,6 +81,53 @@ def test_dispatches_strip_tarball_and_replaces_artifact(tmp_path):
     assert not any("drop.txt" in n for n in names)
 
 
+def test_source_commit_keeps_paths_removed_by_earlier_strip(tmp_path, mocker):
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "go.mod").write_text("module example.com/source\n")
+    (source_dir / "drop.txt").write_text("remove me\n")
+    archive = tmp_path / "foo-1.2.3.tar.gz"
+    make_tar_gz(source_dir, archive, arcname="foo-1.2.3", mtime=1700000000)
+    artifact = build_artifact(archive, archive.name, "repo", dry_run=False)
+
+    def fake_go_vendor(args, cwd=None, env=None):
+        cwd = Path(cwd)
+        if args == ["go", "mod", "tidy"]:
+            (cwd / "go.mod").write_text(
+                "module example.com/source\nrequire example.com/dependency v1.0.0\n"
+            )
+        if args == ["go", "mod", "vendor"]:
+            (cwd / "vendor").mkdir()
+            (cwd / "vendor" / "modules.txt").write_text(
+                "example.com/dependency v1.0.0\n"
+            )
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_go_vendor)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.pipeline.source.commit_timestamp", return_value=1700000000)
+    state = make_state(tmp_path / "work", artifacts=[artifact], source_dir=source_dir)
+    state.source.attach_checkout(source_dir, artifact)
+    spec = PipelineSpec(
+        transform=TransformSection(
+            steps=[
+                StripTarballStep(paths=["*/drop.txt"]),
+                VendorStep(ecosystem="go", sync_go_modules=True),
+            ]
+        )
+    )
+
+    TransformStage().run(make_run_ctx(tmp_path), spec, state)
+
+    assert not (source_dir / "drop.txt").exists()
+    source_artifact = state.find_artifact("foo-1.2.3.tar.gz")
+    with tarfile.open(source_artifact.path) as source_archive:
+        assert "foo-1.2.3/drop.txt" not in source_archive.getnames()
+        go_mod = source_archive.extractfile("foo-1.2.3/go.mod")
+        assert go_mod is not None
+        assert "example.com/dependency" in go_mod.read().decode()
+
+
 def test_dispatches_pack_and_appends_artifact(tmp_path):
     package_dir = tmp_path / "package"
     package_dir.mkdir()
@@ -101,7 +149,7 @@ def test_dispatches_pack_and_appends_artifact(tmp_path):
 def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
     # Activation is pipeline-scoped; invoking a stage directly does not rewrite
     # argv. PipelineRunner activates and validates before running any stage.
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
 
@@ -110,7 +158,7 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
         (cwd / "vendor" / "modules.txt").write_text("x v1")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    mock_run = mocker.patch("gorget.fetch.vendor.go.run", side_effect=fake_go_vendor)
+    mock_run = mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_go_vendor)
 
     ctx = make_run_ctx(tmp_path)
     state = make_state(tmp_path / "work", source_dir=source_dir)
@@ -147,6 +195,7 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
     (package_dir / "foo.spec").write_text("Name: foo\n")
     archive = tmp_path / "foo-1.2.3.tar.gz"
     make_tar_gz(source_dir, archive, arcname="foo-1.2.3", mtime=1700000000)
+    input_bytes = archive.read_bytes()
     artifact = build_artifact(archive, archive.name, "repo", dry_run=False)
 
     def fake_go_vendor(args, cwd=None, env=None):
@@ -159,13 +208,12 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
             (cwd / "vendor" / "modules.txt").write_text("x v0.39.0\n")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
-    mocker.patch("gorget.fetch.vendor.go.run", side_effect=fake_go_vendor)
-    mocker.patch("gorget.fetch.vendor.commit_timestamp", return_value=1700000000)
-    mocker.patch("gorget.transform.base.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_go_vendor)
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
+    mocker.patch("gorget.pipeline.source.commit_timestamp", return_value=1700000000)
     ctx = make_run_ctx(package_dir)
     state = make_state(tmp_path / "work", artifacts=[artifact], source_dir=source_dir)
-    state.source_artifact = artifact
-    state.source_is_checkout = True
+    state.source.attach_checkout(source_dir, artifact)
     spec = PipelineSpec(
         transform=TransformSection(
             steps=[VendorStep(ecosystem="go", sync_go_modules=True)]
@@ -177,11 +225,14 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
     assert (source_dir / "go.mod").read_text().endswith("require x v0.39.0\n")
     assert (source_dir / "go.sum").read_text() == "new checksum\n"
     assert not (source_dir / "vendor").exists()
-    with tarfile.open(archive) as source_archive:
+    assert archive.read_bytes() == input_bytes
+    assert state.source.artifact is state.artifacts[0]
+    assert state.source.artifact.kind == "derived"
+    with tarfile.open(state.source.artifact.path) as source_archive:
         names = source_archive.getnames()
         assert "foo-1.2.3/go.mod" in names
         assert not any("/vendor/" in name for name in names)
-    assert state.source_dirty is False
+    assert state.source.dirty is False
 
 
 def test_syncs_source_dir_back_to_state_after_extraction(tmp_path, mocker):
@@ -207,5 +258,5 @@ def test_syncs_source_dir_back_to_state_after_extraction(tmp_path, mocker):
 
     TransformStage().run(ctx, spec, state)
 
-    assert state.source_dir is not None
-    assert (state.source_dir / "pkg" / "go.mod").exists()
+    assert state.source.path is not None
+    assert (state.source.path / "pkg" / "go.mod").exists()

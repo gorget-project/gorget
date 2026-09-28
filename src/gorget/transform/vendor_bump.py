@@ -422,7 +422,7 @@ class VendorBumpHandler:
                 # The shared source tree changed; TransformStage repacks the
                 # source tarball once at the end so it matches what `vendor`
                 # later builds against.
-                state.source_dirty = True
+                state.source.mark_dirty()
                 # Confirm the bump actually took: catches a dependency that
                 # isn't in the tree at all (typo, or nothing to bump) and a
                 # package manager too old to honor overrides.

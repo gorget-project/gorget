@@ -5,7 +5,7 @@ import yaml
 
 from gorget.config.schema import VendorPlatform
 from gorget.exceptions import GorgetTransientError
-from gorget.fetch.vendor.yarn import YarnVendor
+from gorget.transform.vendor.yarn import YarnVendor
 
 
 def _ok(args=None):
@@ -17,7 +17,7 @@ def _fail(stderr=""):
 
 
 def test_yarn_vendor_runs_install_with_cache_folder(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     cache_dir = tmp_path / ".yarn-cache"
     result = YarnVendor().vendor(tmp_path)
     assert mock_run.call_count == 1
@@ -36,7 +36,7 @@ def test_yarn_vendor_runs_install_with_cache_folder(tmp_path, mocker):
 
 
 def test_yarn_vendor_writes_yarnrc_yml_with_supported_architectures(tmp_path, mocker):
-    mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     YarnVendor().vendor(tmp_path)
     yarnrc = tmp_path / ".yarnrc.yml"
     assert yarnrc.exists()
@@ -47,7 +47,7 @@ def test_yarn_vendor_writes_yarnrc_yml_with_supported_architectures(tmp_path, mo
 
 
 def test_yarn_vendor_merges_existing_yarnrc_yml(tmp_path, mocker):
-    mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     (tmp_path / ".yarnrc.yml").write_text("nodeLinker: node-modules\n")
     YarnVendor().vendor(tmp_path)
     data = yaml.safe_load((tmp_path / ".yarnrc.yml").read_text())
@@ -56,7 +56,7 @@ def test_yarn_vendor_merges_existing_yarnrc_yml(tmp_path, mocker):
 
 
 def test_yarn_vendor_custom_platforms(tmp_path, mocker):
-    mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     platforms = [VendorPlatform(cpu="s390x", os="linux", libc="glibc")]
     YarnVendor().vendor(tmp_path, platforms=platforms)
     data = yaml.safe_load((tmp_path / ".yarnrc.yml").read_text())
@@ -70,8 +70,8 @@ def test_yarn_vendor_cleans_node_modules(tmp_path, mocker):
         node_modules.mkdir(exist_ok=True)
         return _ok()
 
-    mocker.patch("gorget.fetch.vendor.yarn.run", side_effect=create_node_modules)
-    mock_rmtree = mocker.patch("gorget.fetch.vendor.yarn.shutil.rmtree")
+    mocker.patch("gorget.transform.vendor.yarn.run", side_effect=create_node_modules)
+    mock_rmtree = mocker.patch("gorget.transform.vendor.yarn.shutil.rmtree")
     YarnVendor().vendor(tmp_path)
     assert mock_rmtree.call_count == 1
     mock_rmtree.assert_called_once_with(node_modules)
@@ -79,7 +79,7 @@ def test_yarn_vendor_cleans_node_modules(tmp_path, mocker):
 
 def test_yarn_vendor_raises_on_failure(tmp_path, mocker):
     mocker.patch(
-        "gorget.fetch.vendor.yarn.run",
+        "gorget.transform.vendor.yarn.run",
         return_value=_fail(stderr="error Couldn't find a package.json"),
     )
     with pytest.raises(GorgetTransientError, match="Couldn't find a package.json"):
@@ -87,7 +87,7 @@ def test_yarn_vendor_raises_on_failure(tmp_path, mocker):
 
 
 def test_yarn_vendor_creates_cache_dir(tmp_path, mocker):
-    mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     YarnVendor().vendor(tmp_path)
     assert (tmp_path / ".yarn-cache").is_dir()
 
@@ -102,7 +102,7 @@ def _berry_project(tmp_path):
 def test_yarn_berry_two_step_install(tmp_path, mocker):
     """Berry runs update-lockfile (regen checksums) then --immutable (populate cache)."""
     _berry_project(tmp_path)
-    mock_run = mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     result = YarnVendor().vendor(tmp_path)
 
     assert mock_run.call_count == 2
@@ -120,7 +120,7 @@ def test_yarn_berry_two_step_install(tmp_path, mocker):
 
 def test_yarn_berry_writes_offline_cache_config(tmp_path, mocker):
     _berry_project(tmp_path)
-    mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     YarnVendor().vendor(tmp_path)
 
     data = yaml.safe_load((tmp_path / ".yarnrc.yml").read_text())
@@ -133,7 +133,7 @@ def test_yarn_berry_writes_offline_cache_config(tmp_path, mocker):
 
 def test_yarn_berry_detected_via_yarnrc_yarnpath(tmp_path, mocker):
     (tmp_path / ".yarnrc.yml").write_text("yarnPath: .yarn/releases/yarn-4.15.0.cjs\n")
-    mock_run = mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     YarnVendor().vendor(tmp_path)
     assert mock_run.call_count == 2
     assert mock_run.call_args_list[0].args[0] == ["yarn", "install", "--mode", "update-lockfile"]
@@ -146,7 +146,7 @@ def test_yarn_berry_detected_via_yarnrc_yarnpath(tmp_path, mocker):
 
 def test_yarn_berry_detected_via_releases_dir(tmp_path, mocker):
     (tmp_path / ".yarn" / "releases").mkdir(parents=True)
-    mock_run = mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     YarnVendor().vendor(tmp_path)
     assert mock_run.call_count == 2
     assert mock_run.call_args_list[0].args[0] == ["yarn", "install", "--mode", "update-lockfile"]
@@ -157,7 +157,7 @@ def test_yarn_berry_fails_on_update_lockfile_skips_immutable(tmp_path, mocker):
     """If update-lockfile fails, --immutable never runs."""
     _berry_project(tmp_path)
     mock_run = mocker.patch(
-        "gorget.fetch.vendor.yarn.run",
+        "gorget.transform.vendor.yarn.run",
         return_value=_fail(stderr="checksum mismatch"),
     )
     with pytest.raises(GorgetTransientError, match="checksum mismatch"):
@@ -169,7 +169,7 @@ def test_yarn_berry_fails_on_immutable_step(tmp_path, mocker):
     """If update-lockfile succeeds but --immutable fails, error is raised."""
     _berry_project(tmp_path)
     mock_run = mocker.patch(
-        "gorget.fetch.vendor.yarn.run",
+        "gorget.transform.vendor.yarn.run",
         side_effect=[_ok(), _fail(stderr="immutable check failed")],
     )
     with pytest.raises(GorgetTransientError, match="immutable check failed"):
@@ -179,7 +179,7 @@ def test_yarn_berry_fails_on_immutable_step(tmp_path, mocker):
 
 def test_yarn_v1_single_install_call(tmp_path, mocker):
     """v1 still runs a single install, not the two-step Berry flow."""
-    mock_run = mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     YarnVendor().vendor(tmp_path)
     assert mock_run.call_count == 1
     cmd = mock_run.call_args_list[0].args[0]
@@ -189,7 +189,7 @@ def test_yarn_v1_single_install_call(tmp_path, mocker):
 
 def test_yarn_v1_when_package_manager_is_v1(tmp_path, mocker):
     (tmp_path / "package.json").write_text('{"packageManager": "yarn@1.22.22"}')
-    mock_run = mocker.patch("gorget.fetch.vendor.yarn.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     YarnVendor().vendor(tmp_path)
     cmd = mock_run.call_args_list[0].args[0]
     assert "--frozen-lockfile" in cmd and "--cache-folder" in cmd

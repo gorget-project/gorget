@@ -1,9 +1,4 @@
-"""`FetchStage`: dispatches each `fetch:` step to its handler in declared order.
-
-Step order is exactly YAML list order -- a `spec-update` step naturally runs before
-any later `spec-source` step just because it appears first, and a `vendor` step
-picks up `FetchContext.source_dir` set by an earlier `git` step in the same list.
-"""
+"""`FetchStage`: acquire pipeline inputs in declared order."""
 
 from __future__ import annotations
 
@@ -16,16 +11,13 @@ from gorget.config.schema import (
     SpecSourceStep,
     SpecUpdateStep,
     UrlStep,
-    VendorStep,
 )
 from gorget.context import RunContext
-from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchContext
 from gorget.fetch.git import GitHandler
 from gorget.fetch.spec_source import SpecSourceHandler
 from gorget.fetch.spec_update import SpecUpdateHandler
 from gorget.fetch.url import UrlHandler
-from gorget.fetch.vendor import VendorHandler
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 
@@ -41,7 +33,6 @@ _HANDLERS: dict[type, Any] = {
     SpecSourceStep: SpecSourceHandler(),
     UrlStep: UrlHandler(),
     GitStep: GitHandler(),
-    VendorStep: VendorHandler(),
 }
 
 logger = logging.getLogger("gorget.pipeline")
@@ -60,24 +51,15 @@ class FetchStage:
             toolchain=spec.toolchain.entries,
         )
         for step in spec.fetch:
-            if isinstance(step, VendorStep) and step.sync_go_modules:
-                raise GorgetConfigError(
-                    "sync-go-modules must be used on a transform vendor step so "
-                    "Gorget can repack the synchronized Source0 archive"
-                )
             handler = _HANDLERS[type(step)]
             logger.debug("fetch step: %s", step)
             source_dir_before = fetch_ctx.source_dir
             artifacts = handler.run(step, fetch_ctx)
             logger.debug("fetch step produced: %s", [a.output_name for a in artifacts])
-            state.artifacts.extend(artifacts)
+            state.add_input_artifacts(artifacts)
             # The step that first sets source_dir is the `git` clone; its sole
             # artifact is the source tarball backing that checkout. Record it so
             # a later transform step editing the checkout can repack it.
             if source_dir_before is None and fetch_ctx.source_dir is not None and artifacts:
-                state.source_artifact = artifacts[0]
-                state.source_is_checkout = True
-        # Survives past this method's return (unlike `fetch_ctx` itself) so a
-        # later Transform stage can reuse the same checkout.
-        state.source_dir = fetch_ctx.source_dir
+                state.source.attach_checkout(fetch_ctx.source_dir, artifacts[0])
         return StageResult(name=self.name, status="success")

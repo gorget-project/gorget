@@ -363,7 +363,7 @@ def test_handler_applies_pins_per_module(tmp_path, mocker):
     VendorBumpHandler().run(step, ctx, state)
 
     assert mock_run.call_args_list[0].kwargs["cwd"] == source_dir / "server"
-    assert state.source_dirty is True
+    assert state.source.dirty is True
 
 
 def test_handler_dry_run_does_nothing(tmp_path, mocker):

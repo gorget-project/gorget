@@ -95,6 +95,7 @@ fetch:
   - type: git
     repo: "{repo}"
     ref: "main"
+transform:
   - type: vendor
     ecosystem: npm
     archive_name: "test-npm-cache.tar.bz2"
@@ -148,6 +149,7 @@ fetch:
   - type: git
     repo: "{repo}"
     ref: "main"
+transform:
   - type: vendor
     ecosystem: pnpm
     archive_name: "test-pnpm-store.tar.bz2"
@@ -190,6 +192,7 @@ fetch:
   - type: git
     repo: "{repo}"
     ref: "main"
+transform:
   - type: vendor
     ecosystem: yarn
     archive_name: "test-yarn-cache.tar.bz2"
@@ -241,6 +244,7 @@ fetch:
   - type: git
     repo: "{repo}"
     ref: "main"
+transform:
   - type: vendor
     ecosystem: cargo
     archive_name: "test-cargo-vendor.tar.bz2"

@@ -1,10 +1,4 @@
-"""Shared interfaces for per-ecosystem vendor archive generation.
-
-`VendorHandler`/`VendorEcosystem` are typed against `VendorRunContext` (a Protocol)
-rather than the concrete `FetchContext` so the exact same vendor step/ecosystem code
-can run from either the Fetch stage's `vendor` step or the Transform stage's `vendor`
-step (reused there to let `vendor-bump` edit lockfiles before vendoring runs).
-"""
+"""Shared interfaces for dependency vendor archive generation."""
 
 from __future__ import annotations
 
@@ -39,7 +33,7 @@ class VendorEcosystem(Protocol):
 
         `package_dir` is the RPM package directory (containing the spec,
         go-vendor-tools.toml, etc.) -- distinct from `module_dir`, the freshly
-        fetched upstream checkout being vendored. Only the `go` ecosystem
+        acquired upstream checkout being vendored. Only the `go` ecosystem
         currently uses it (to read go-vendor-tools.toml); other ecosystems
         accept and ignore it.
 

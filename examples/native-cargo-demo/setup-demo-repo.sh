@@ -3,8 +3,8 @@
 # for a native package's upstream git history -- unlike every other example
 # here, there is no tarball URL anywhere to fall back to or fetch a signature
 # for. This demo's pipeline (see demo.source-pipeline.yaml) needs nothing
-# beyond `fetch: git` + `fetch: vendor`, though a real native package can
-# still add transform:/verify:/policy:/post: on top like any other.
+# beyond `fetch: git` + `transform: vendor`, though a real native package can
+# still add verify:/policy:/post: on top like any other.
 set -euo pipefail
 cd "$(dirname "$0")"
 

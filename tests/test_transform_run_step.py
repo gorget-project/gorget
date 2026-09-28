@@ -156,13 +156,28 @@ def test_run_subprocess_failure_raises_transient_error(tmp_path, mocker):
         RunHandler().run(RunStep(command=["make"]), ctx, state)
 
 
-def test_run_dry_run_does_nothing(tmp_path, mocker):
+def test_run_dry_run_plans_file_and_directory_output_names(tmp_path, mocker):
     mock_run = mocker.patch("gorget.transform.run_step.run")
     ctx = make_ctx(tmp_path / "work", source_dir=None, dry_run=True)
     state = make_state(tmp_path / "work")
     RunHandler().run(RunStep(command=["make"], outputs=["x.txt"]), ctx, state)
     mock_run.assert_not_called()
     assert state.artifacts == []
+    assert len(state.artifact_plans) == 1
+    assert state.artifact_plans[0].output_names == ("x.txt", "x.txt.tar.gz")
+
+
+def test_run_dry_run_marks_discovered_outputs_as_dynamic(tmp_path, mocker):
+    mock_run = mocker.patch("gorget.transform.run_step.run")
+    ctx = make_ctx(tmp_path / "work", source_dir=None, dry_run=True)
+    state = make_state(tmp_path / "work")
+
+    RunHandler().run(
+        RunStep(command=["discover"], discovered_outputs="manifest.tsv"), ctx, state
+    )
+
+    mock_run.assert_not_called()
+    assert state.dynamic_artifact_producers == ["run:discover (discovered)"]
 
 
 def _make_tarball_artifact(tmp_path, output_name, file_contents):

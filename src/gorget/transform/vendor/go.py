@@ -9,8 +9,8 @@ from pathlib import Path
 
 from gorget.config.schema import ToolchainEntry, VendorPlatform
 from gorget.exceptions import GorgetTransientError
-from gorget.fetch.vendor.gomod_patch_sync import raise_unless_spec_patches_gomod
 from gorget.toolchain import wrap_command
+from gorget.transform.vendor.gomod_patch_sync import raise_unless_spec_patches_gomod
 from gorget.util.subprocess_run import run
 
 _CONFIG_FILENAME = "go-vendor-tools.toml"

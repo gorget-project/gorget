@@ -8,7 +8,7 @@ URL:            https://example.com
 # vendor-bump bumps rsc.io/quote's go.mod requirement directly in the checkout
 # fetch: {git} already archived Source0 from -- gorget requires a spec patch
 # replicating that change onto the real build tree, or it fails closed with a
-# GorgetConfigError (see gorget/fetch/vendor/gomod_patch_sync.py). This demo
+# GorgetConfigError (see gorget/transform/vendor/gomod_patch_sync.py). This demo
 # has no real %prep/%build, so the patch is declared for gorget's check only.
 Patch0:         0001-bump-quote-gomod.patch
 

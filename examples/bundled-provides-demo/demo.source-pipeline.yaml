@@ -3,6 +3,10 @@ fetch:
     repo: "./demo-repo"
     ref: "main"
 
+publish:
+  files:
+    - "${PACKAGE}-${VERSION}.tar.gz"
+
 # The bundled-provides post step parses the fetched ui/package-lock.json and
 # writes an RPM Provides block to bundled-npm-provides.inc in --package-dir.
 # It's a self-contained primitive -- it declares its own ecosystem/modules and

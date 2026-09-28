@@ -61,18 +61,15 @@ def test_stages_run_in_declared_order(tmp_path, mocker):
     assert [s.name for s in report.stages] == ["a", "b", "c"]
 
 
-def test_dry_run_skips_emit_stage_without_calling_it(tmp_path, mocker):
-    from gorget.pipeline.stages.emit import EmitStage
-
-    emit_run = mocker.patch.object(EmitStage, "run")
+def test_dry_run_calls_emit_stage_to_select_publications_without_writing(tmp_path):
     ctx = dataclasses.replace(make_ctx(tmp_path), dry_run=True)
 
     report = PipelineRunner(ctx, PipelineSpec()).run()
 
-    emit_run.assert_not_called()
     emit_stage_result = next(s for s in report.stages if s.name == "emit")
     assert emit_stage_result.status == "skipped"
     assert emit_stage_result.reason == "dry-run"
+    assert not Path(ctx.output_dir).exists()
 
 
 def test_non_dry_run_calls_emit_stage(tmp_path):

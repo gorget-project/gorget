@@ -16,3 +16,8 @@ fetch:
   - type: url
     url: "https://ftp.gnu.org/gnu/hello/hello-${VERSION}.tar.gz.sig"
     filename: "hello-${VERSION}.tar.gz.sig"
+
+publish:
+  files:
+    - "hello-${VERSION}.tar.gz"
+    - "hello-${VERSION}.tar.gz.sig"

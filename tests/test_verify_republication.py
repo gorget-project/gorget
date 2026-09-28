@@ -28,7 +28,13 @@ def make_ctx(package_dir, *, version="1.2.3", old_version=None):
 
 def make_state(work_dir, artifacts):
     report = PipelineReport(package="foo", version="1.2.3", old_version=None, dry_run=False)
-    return StageState(work_dir=work_dir, spec=None, report=report, artifacts=list(artifacts))
+    return StageState(
+        work_dir=work_dir,
+        spec=None,
+        report=report,
+        input_artifacts=list(artifacts),
+        artifacts=list(artifacts),
+    )
 
 
 def make_artifact(path, name, checksum):
@@ -85,6 +91,36 @@ def test_matching_checksum_is_not_a_republication(tmp_path):
     ctx = make_ctx(tmp_path)
     state = make_state(tmp_path, [make_artifact(artifact_path, "foo.tar.gz", digest)])
     assert check_republication(ctx, state, []) == []
+
+
+def test_compares_same_name_derived_publication_instead_of_input(tmp_path):
+    published_content = b"filtered content"
+    published_digest = hashlib.sha512(published_content).hexdigest()
+    (tmp_path / "sources").write_text(
+        f"SHA512 (foo.tar.gz) = {published_digest}\n"
+    )
+
+    input_path = tmp_path / "input.tar.gz"
+    input_path.write_bytes(b"unfiltered upstream content")
+    input_artifact = make_artifact(
+        input_path,
+        "foo.tar.gz",
+        hashlib.sha512(input_path.read_bytes()).hexdigest(),
+    )
+    publication_path = tmp_path / "publication.tar.gz"
+    publication_path.write_bytes(published_content)
+    publication_artifact = FetchedArtifact(
+        path=publication_path,
+        output_name="foo.tar.gz",
+        source_description="strip-tarball",
+        checksum=published_digest,
+        kind="derived",
+        parents=(input_artifact.ref(),),
+    )
+    state = make_state(tmp_path, [input_artifact])
+    state.artifacts[:] = [publication_artifact]
+
+    assert check_republication(make_ctx(tmp_path), state, []) == []
 
 
 def test_mismatched_checksum_fails_without_acceptance(tmp_path):

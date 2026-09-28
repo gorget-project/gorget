@@ -4,7 +4,7 @@ import pytest
 
 from gorget.config.schema import VendorPlatform
 from gorget.exceptions import GorgetTransientError
-from gorget.fetch.vendor.npm import NpmVendor
+from gorget.transform.vendor.npm import NpmVendor
 
 
 def _ok(args=None):
@@ -16,7 +16,7 @@ def _fail(stderr=""):
 
 
 def test_npm_vendor_runs_install_for_each_default_platform(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.fetch.vendor.npm.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.npm.run", return_value=_ok())
     result = NpmVendor().vendor(tmp_path)
     cache_dir = tmp_path / ".npm-cache"
     assert mock_run.call_count == 2
@@ -44,7 +44,7 @@ def test_npm_vendor_runs_install_for_each_default_platform(tmp_path, mocker):
 
 
 def test_npm_vendor_custom_platforms(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.fetch.vendor.npm.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.transform.vendor.npm.run", return_value=_ok())
     platforms = [
         VendorPlatform(cpu="s390x", os="linux", libc="glibc"),
     ]
@@ -73,8 +73,8 @@ def test_npm_vendor_cleans_node_modules_between_iterations(tmp_path, mocker):
         node_modules.mkdir(exist_ok=True)
         return _ok()
 
-    mocker.patch("gorget.fetch.vendor.npm.run", side_effect=create_node_modules)
-    mock_rmtree = mocker.patch("gorget.fetch.vendor.npm.shutil.rmtree")
+    mocker.patch("gorget.transform.vendor.npm.run", side_effect=create_node_modules)
+    mock_rmtree = mocker.patch("gorget.transform.vendor.npm.shutil.rmtree")
     NpmVendor().vendor(tmp_path)
     # rmtree called once per platform (2 defaults)
     assert mock_rmtree.call_count == 2
@@ -83,7 +83,7 @@ def test_npm_vendor_cleans_node_modules_between_iterations(tmp_path, mocker):
 
 def test_npm_vendor_raises_on_failure(tmp_path, mocker):
     mocker.patch(
-        "gorget.fetch.vendor.npm.run",
+        "gorget.transform.vendor.npm.run",
         side_effect=[_ok(), _fail(stderr="ERESOLVE could not resolve")],
     )
     with pytest.raises(
@@ -97,6 +97,6 @@ def test_npm_vendor_has_no_archive_root_files(tmp_path):
 
 
 def test_npm_vendor_creates_cache_dir(tmp_path, mocker):
-    mocker.patch("gorget.fetch.vendor.npm.run", return_value=_ok())
+    mocker.patch("gorget.transform.vendor.npm.run", return_value=_ok())
     NpmVendor().vendor(tmp_path)
     assert (tmp_path / ".npm-cache").is_dir()

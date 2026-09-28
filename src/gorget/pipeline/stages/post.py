@@ -28,10 +28,10 @@ from typing import ClassVar
 from gorget.config.schema import BundledProvidesStep, PipelineSpec, PostRunStep
 from gorget.context import RunContext
 from gorget.exceptions import GorgetTransientError
-from gorget.fetch.vendor.lockfile import parse_bundled_provides
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
+from gorget.transform.vendor.lockfile import parse_bundled_provides
 from gorget.util.subprocess_run import run
 from gorget.util.version import rpm_version
 
@@ -63,12 +63,14 @@ class PostStage:
     ) -> None:
         # Parse straight from the fetched source tree -- the same checkout
         # `vendor`/`vendor-bump` operate on, so provides reflect any bumps.
-        if state.source_dir is None:
+        if state.source.path is None:
             raise GorgetTransientError(
                 "bundled-provides step requires a source checkout -- add a preceding "
                 "'git' fetch step whose lockfiles this step can read"
             )
-        provides = parse_bundled_provides(step.ecosystem, state.source_dir, step.modules)
+        provides = parse_bundled_provides(
+            step.ecosystem, state.source.path, step.modules
+        )
         # Namespace is bundled(npm(...)) for every JS ecosystem: npm/pnpm/yarn
         # all resolve against the npm registry, matching Fedora's convention.
         lines = [

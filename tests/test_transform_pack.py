@@ -61,7 +61,7 @@ def test_missing_file_raises(tmp_path):
         PackHandler().run(step, ctx, state)
 
 
-def test_dry_run_produces_no_artifact(tmp_path):
+def test_dry_run_plans_artifact_without_producing_it(tmp_path):
     package_dir = tmp_path / "package"
     package_dir.mkdir()
     (package_dir / "Makefile").write_text("all:\n")
@@ -72,6 +72,9 @@ def test_dry_run_produces_no_artifact(tmp_path):
     PackHandler().run(step, ctx, state)
 
     assert state.artifacts == []
+    assert len(state.artifact_plans) == 1
+    assert state.artifact_plans[0].output_names == ("scripts.tar.gz",)
+    assert state.artifact_plans[0].alternatives[0].checksum is None
 
 
 def test_two_runs_produce_byte_identical_archives(tmp_path):
