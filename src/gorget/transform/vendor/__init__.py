@@ -8,10 +8,15 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
-from gorget.config.schema import ToolchainEntry, VendorPlatform, VendorStep
+from gorget.config.schema import ToolchainEntry, VendorModule, VendorPlatform, VendorStep
 from gorget.exceptions import GorgetConfigError
-from gorget.pipeline.artifact import Artifact, build_derived_artifact, derived_artifact_path
-from gorget.transform.vendor.base import VendorEcosystem, VendorRunContext
+from gorget.pipeline.artifact import build_derived_artifact, derived_artifact_path
+from gorget.transform.vendor.base import (
+    VendorEcosystem,
+    VendorResult,
+    VendorRunContext,
+    resolve_vendored_modules,
+)
 from gorget.transform.vendor.cargo import CargoVendor
 from gorget.transform.vendor.combine import combine_vendor_archives
 from gorget.transform.vendor.composer import ComposerVendor
@@ -36,7 +41,7 @@ _ECOSYSTEMS: dict[str, VendorEcosystem] = {
 
 
 class VendorHandler:
-    def run(self, step: VendorStep, ctx: VendorRunContext) -> list[Artifact]:
+    def run(self, step: VendorStep, ctx: VendorRunContext) -> VendorResult:
         ecosystem = _ECOSYSTEMS[step.ecosystem]
         archive_name = step.archive_name or f"{ctx.vars.package}-vendor.tar.gz"
         archive_path = derived_artifact_path(ctx.work_dir, "vendor", archive_name)
@@ -69,19 +74,22 @@ class VendorHandler:
                     step.platforms or (),
                     step.metadata_packages,
                 )
-            return [
-                build_derived_artifact(
-                    archive_path,
-                    archive_name,
-                    "vendor:pnpm offline-cache",
-                    ctx.dry_run,
-                )
-            ]
+            artifact = build_derived_artifact(
+                archive_path, archive_name, "vendor:pnpm offline-cache", ctx.dry_run
+            )
+            modules = (
+                resolve_vendored_modules(step, ctx.source_dir)
+                if not ctx.dry_run and ctx.source_dir is not None
+                else ()
+            )
+            return VendorResult(artifacts=(artifact,), modules=modules)
         if step.metadata_packages:
             raise GorgetConfigError(
                 "metadata-packages requires pnpm offline-cache; "
                 "remove it or set offline-cache: true"
             )
+
+        vendor_source_dir: Path | None = None
 
         if not ctx.dry_run:
             if ctx.source_dir is None:
@@ -89,63 +97,67 @@ class VendorHandler:
                     "A 'vendor' step requires a preceding 'git' step in the same "
                     "pipeline to establish a source checkout to vendor against"
                 )
-            source_dir = ctx.source_dir
-            vendor_source_dir = source_dir
-            if step.sync_go_modules:
-                if step.ecosystem != "go":
-                    raise GorgetConfigError(
-                        "sync-go-modules is only supported for ecosystem: go"
-                    )
-                ctx.work_dir.mkdir(parents=True, exist_ok=True)
-                vendor_source_dir = Path(
-                    tempfile.mkdtemp(prefix="_vendor_source-", dir=ctx.work_dir)
-                ) / "source"
-                shutil.copytree(
-                    source_dir,
-                    vendor_source_dir,
-                    symlinks=True,
-                    ignore=shutil.ignore_patterns(".git"),
+            if step.sync_go_modules and step.ecosystem != "go":
+                raise GorgetConfigError(
+                    "sync-go-modules is only supported for ecosystem: go"
                 )
-            module_outputs = [
-                (
-                    module,
-                    self._vendor_module(
+
+            source_dir = ctx.source_dir
+            ctx.work_dir.mkdir(parents=True, exist_ok=True)
+            temporary_source_root = Path(
+                tempfile.mkdtemp(prefix="_vendor_source-", dir=ctx.work_dir)
+            )
+            vendor_source_dir = temporary_source_root / "source"
+            shutil.copytree(
+                source_dir,
+                vendor_source_dir,
+                symlinks=True,
+                ignore=shutil.ignore_patterns(".git"),
+            )
+            module_outputs: list[tuple[VendorModule, Path]] = []
+            cleanup = getattr(type(ecosystem), "cleanup", None)
+            try:
+                for module in step.modules:
+                    module_dir = vendor_source_dir / module.path
+                    output = self._vendor_module(
                         ecosystem,
-                        vendor_source_dir / module.path,
+                        module_dir,
                         ctx.toolchain,
                         ctx.package_dir,
                         module.use_workspace,
                         step.platforms or (),
                         sync_go_modules=step.sync_go_modules,
                         gradle_task=step.task if step.ecosystem == "gradle" else None,
-                    ),
+                    )
+                    module_outputs.append((module, output))
+                if step.sync_go_modules:
+                    self._sync_go_module_files(source_dir, vendor_source_dir, step)
+                mtime = commit_timestamp(source_dir)
+                root_files = (
+                    ecosystem.archive_root_files(module_outputs[0][1].parent)
+                    if len(module_outputs) == 1 and module_outputs[0][0].name is None
+                    else None
                 )
-                for module in step.modules
-            ]
-            if step.sync_go_modules:
-                self._sync_go_module_files(source_dir, vendor_source_dir, step)
-            mtime = commit_timestamp(source_dir)
-            # Only the single-unnamed-module ("bare vendor/") case needs
-            # root_files -- combine_vendor_archives ignores them otherwise
-            # anyway, but there's nothing to gain from an archive_root_files
-            # filesystem check that's guaranteed to be discarded.
-            root_files = (
-                ecosystem.archive_root_files(module_outputs[0][1].parent)
-                if len(module_outputs) == 1 and module_outputs[0][0].name is None
-                else None
-            )
-            combine_vendor_archives(
-                module_outputs, archive_path, mtime=mtime, root_files=root_files
-            )
+                combine_vendor_archives(
+                    module_outputs, archive_path, mtime=mtime, root_files=root_files
+                )
+            except BaseException:
+                shutil.rmtree(temporary_source_root, ignore_errors=True)
+                raise
+            finally:
+                for _module, output in module_outputs:
+                    if cleanup is not None:
+                        cleanup(ecosystem, output)
 
-        return [
-            build_derived_artifact(
-                archive_path,
-                archive_name,
-                f"vendor:{step.ecosystem}",
-                ctx.dry_run,
-            )
-        ]
+        artifact = build_derived_artifact(
+            archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run
+        )
+        modules = (
+            resolve_vendored_modules(step, vendor_source_dir)
+            if vendor_source_dir is not None
+            else ()
+        )
+        return VendorResult(artifacts=(artifact,), modules=modules)
 
     @staticmethod
     def _vendor_module(

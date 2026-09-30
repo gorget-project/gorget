@@ -15,7 +15,6 @@ from gorget.config.schema import (
     VendorStep,
 )
 from gorget.context import RunContext
-from gorget.pipeline.artifact import Artifact
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
@@ -24,17 +23,19 @@ from gorget.transform.pack import PackHandler
 from gorget.transform.run_step import RunHandler
 from gorget.transform.strip_tarball import StripTarballHandler
 from gorget.transform.vendor import VendorHandler
+from gorget.transform.vendor.base import VendorResult
 from gorget.transform.vendor_bump import VendorBumpHandler
 
 _vendor_handler = VendorHandler()
 
 
 class _VendorStepAdapter:
-    """Add `VendorHandler`'s returned artifacts to pipeline state."""
+    """Add vendor artifacts and policy workspaces to pipeline state."""
 
     def run(self, step: VendorStep, ctx: TransformContext, state: StageState) -> None:
-        artifacts: list[Artifact] = _vendor_handler.run(step, ctx)
-        state.add_derived_artifacts(artifacts)
+        result: VendorResult = _vendor_handler.run(step, ctx)
+        state.add_derived_artifacts(result.artifacts)
+        state.vendored_modules.extend(result.modules)
         if step.sync_go_modules:
             state.source.mark_dirty()
 

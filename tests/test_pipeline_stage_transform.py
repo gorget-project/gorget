@@ -176,10 +176,17 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
     assert state.artifacts[0].output_name == "foo-vendor.tar.gz"
     # `go mod tidy` runs before `go mod vendor` by default (matching
     # go-vendor-tools' own default), even with no go-vendor-tools.toml present.
+    vendor_module_dir = state.vendored_modules[0].path
     assert mock_run.call_args_list == [
-        mocker.call(["go", "mod", "tidy"], cwd=source_dir, env={"GOWORK": "off"}),
-        mocker.call(["go", "mod", "vendor"], cwd=source_dir, env={"GOWORK": "off"}),
+        mocker.call(["go", "mod", "tidy"], cwd=vendor_module_dir, env={"GOWORK": "off"}),
+        mocker.call(
+            ["go", "mod", "vendor"], cwd=vendor_module_dir, env={"GOWORK": "off"}
+        ),
     ]
+    assert [(module.ecosystem, module.path) for module in state.vendored_modules] == [
+        ("go", vendor_module_dir)
+    ]
+    assert vendor_module_dir != source_dir
 
 
 def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, mocker):
@@ -225,6 +232,7 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
     assert (source_dir / "go.mod").read_text().endswith("require x v0.39.0\n")
     assert (source_dir / "go.sum").read_text() == "new checksum\n"
     assert not (source_dir / "vendor").exists()
+    assert (state.vendored_modules[0].path / "vendor" / "modules.txt").is_file()
     assert archive.read_bytes() == input_bytes
     assert state.source.artifact is state.artifacts[0]
     assert state.source.artifact.kind == "derived"

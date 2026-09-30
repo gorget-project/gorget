@@ -19,6 +19,7 @@ from gorget.pipeline.publication import (
 )
 from gorget.pipeline.result import PipelineReport
 from gorget.pipeline.source import SourceWorkspace
+from gorget.policy.base import VendoredModule
 from gorget.specfile import SpecFile
 
 
@@ -32,6 +33,7 @@ class StageState:
     artifact_plans: list[ArtifactPlan] = field(default_factory=list)
     dynamic_artifact_producers: list[str] = field(default_factory=list)
     source: SourceWorkspace = field(default_factory=SourceWorkspace)
+    vendored_modules: list[VendoredModule] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # Same list object, not a copy: as FetchStage extends `artifacts`,
