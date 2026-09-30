@@ -36,12 +36,6 @@ transform:
   - type: vendor
     ecosystem: go
 
-  - type: build-ui
-    ecosystem: npm
-    script: build
-    path: ui
-    output-dir: dist
-
   # Escape hatch: an arbitrary command, with declared outputs archived as new
   # artifacts afterward. Both Node invocations resolve to node-24 through the
   # pipeline-scoped toolchain PATH, including the child launched through env.

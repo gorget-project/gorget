@@ -165,16 +165,6 @@ class VendorBumpStep:
 
 
 @dataclass(frozen=True, kw_only=True)
-class BuildUiStep:
-    type: Literal["build-ui"] = "build-ui"
-    ecosystem: Literal["npm", "yarn"] = "npm"
-    script: str = "build"
-    path: str = "."
-    output_dir: str = "dist"
-    archive_name: str | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
 class RunStep:
     type: Literal["run"] = "run"
     command: list[str] = field(default_factory=list)
@@ -204,12 +194,11 @@ class RunStep:
 
 # Vendoring consumes a source workspace and creates a derived artifact, so it is
 # a transform step even when no earlier transform mutates the source.
-TransformStep = StripTarballStep | VendorBumpStep | BuildUiStep | RunStep | VendorStep | PackStep
+TransformStep = StripTarballStep | VendorBumpStep | RunStep | VendorStep | PackStep
 
 TRANSFORM_STEP_TYPES: dict[str, type] = {
     "strip-tarball": StripTarballStep,
     "vendor-bump": VendorBumpStep,
-    "build-ui": BuildUiStep,
     "run": RunStep,
     "vendor": VendorStep,
     "pack": PackStep,

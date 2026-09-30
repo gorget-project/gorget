@@ -4,7 +4,7 @@ Unlike `fetch/base.py`'s `FetchStepHandler` (uniform `run(step, ctx) -> list[
 Artifact]`), transform handlers take the shared `run(step, ctx, state) ->
 None` shape and mutate `state` directly -- the primitives are genuinely
 heterogeneous (strip-tarball replaces an existing artifact, vendor-bump touches
-neither the artifact list nor produces one, build-ui/run append new artifacts),
+neither the artifact list nor produces one, run appends new artifacts),
 so forcing a single return-based contract would fit worse than it would help.
 """
 
@@ -36,7 +36,7 @@ class TransformStepHandler(Protocol):
 
 def ensure_source_dir(ctx: TransformContext, state: StageState, target: str | None = None) -> Path:
     """Return the working source tree for steps that need one (vendor-bump,
-    vendor, build-ui, run). Reuses the source workspace when one exists;
+    vendor, run). Reuses the source workspace when one exists;
     otherwise extracts the sole fetched artifact, since there's no other way to
     guess which one to use if there's more than one (or none).
 
