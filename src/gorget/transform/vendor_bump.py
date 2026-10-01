@@ -49,10 +49,19 @@ class _GoPin:
     def apply(
         self, module_dir: Path, entry: VendorBumpEntry, toolchain: Sequence[ToolchainEntry]
     ) -> None:
-        mode, ver = _parse_constraint(entry.version)
-        # Both modes use the same Go command — Go's MVS naturally picks latest matching.
-        require = f"-require={entry.dependency}@{ver}"
-        result = run(wrap_command(["go", "mod", "edit", require], toolchain), cwd=module_dir)
+        self.apply_many(module_dir, [entry], toolchain)
+
+    def apply_many(
+        self,
+        module_dir: Path,
+        entries: Sequence[VendorBumpEntry],
+        toolchain: Sequence[ToolchainEntry],
+    ) -> None:
+        requirements = [
+            f"-require={entry.dependency}@{_parse_constraint(entry.version)[1]}"
+            for entry in entries
+        ]
+        result = run(wrap_command(["go", "mod", "edit", *requirements], toolchain), cwd=module_dir)
         if result.returncode != 0:
             raise GorgetTransientError(
                 f"go mod edit failed in {module_dir}: {result.stderr.strip()}"
@@ -409,13 +418,48 @@ class VendorBumpHandler:
         resolve = _RESOLVERS.get(step.ecosystem)
         for module in step.modules:
             module_dir = source_dir / module.path
+            if step.ecosystem == "go":
+                # Workspace-wide MVS can hide outdated sibling requirements.
+                def resolve_go(path: Path, package: str) -> str | None:
+                    result = run(
+                        wrap_command(["go", "list", "-m", package], ctx.toolchain),
+                        cwd=path,
+                        env={"GOWORK": "off"},
+                    )
+                    parts = result.stdout.split()
+                    return parts[1] if result.returncode == 0 and len(parts) >= 2 else None
+
+                pending = [
+                    entry
+                    for entry in step.pins
+                    if resolve is None
+                    or not (
+                        (current := resolve_go(module_dir, entry.dependency))
+                        and satisfies_constraint(current, entry.version)
+                    )
+                ]
+                if not pending:
+                    continue
+                _GoPin().apply_many(module_dir, pending, ctx.toolchain)
+                state.source.mark_dirty()
+                for entry in pending if resolve is not None else []:
+                    actual = resolve_go(module_dir, entry.dependency)
+                    if actual is None or not satisfies_constraint(actual, entry.version):
+                        raise GorgetTransientError(
+                            f"vendor-bump: {entry.dependency} resolved to {actual} "
+                            f"in {module_dir}, "
+                            f"need {entry.version}"
+                        )
+                continue
             for entry in step.pins:
                 if resolve:
                     current = resolve(module_dir, entry.dependency)
                     if current and satisfies_constraint(current, entry.version):
                         logger.info(
                             "vendor-bump: %s already at %s (satisfies %s), skipping",
-                            entry.dependency, current, entry.version,
+                            entry.dependency,
+                            current,
+                            entry.version,
                         )
                         continue
                 strategy.apply(module_dir, entry, ctx.toolchain)
