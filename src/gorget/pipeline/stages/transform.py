@@ -34,7 +34,7 @@ class _VendorStepAdapter:
         result: VendorResult = _vendor_handler.run(step, ctx)
         state.add_derived_artifacts(result.artifacts)
         state.vendored_modules.extend(result.modules)
-        if step.sync_go_modules:
+        if result.source_changed or step.sync_go_modules:
             state.source.mark_dirty()
 
 
