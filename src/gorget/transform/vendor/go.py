@@ -9,7 +9,7 @@ from pathlib import Path
 
 from gorget.config.schema import ToolchainEntry, VendorPlatform
 from gorget.exceptions import GorgetTransientError
-from gorget.toolchain import wrap_command
+from gorget.package_manager import PackageManager
 from gorget.transform.vendor.gomod_patch_sync import raise_unless_spec_patches_gomod
 from gorget.util.subprocess_run import run
 
@@ -95,6 +95,9 @@ def _validate_gomod_patch_sync(
 
 
 class GoVendor:
+    def source_files(self, *, sync_go_modules: bool = False) -> tuple[str, ...]:
+        return ("go.mod", "go.sum", "go.work", "go.work.sum") if sync_go_modules else ()
+
     def vendor(
         self,
         module_dir: Path,
@@ -184,7 +187,7 @@ class GoVendor:
         toolchain: Sequence[ToolchainEntry],
         env: dict[str, str] | None,
     ) -> None:
-        result = run(wrap_command(command, toolchain), cwd=module_dir, env=env)
+        result = PackageManager(module_dir, toolchain, runner=run).run(command, env=env)
         if result.returncode != 0:
             raise GorgetTransientError(
                 f"{shlex.join(command)} failed in {module_dir}: {result.stderr.strip()}"

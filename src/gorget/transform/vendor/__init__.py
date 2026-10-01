@@ -11,6 +11,7 @@ from typing import cast
 from gorget.config.schema import ToolchainEntry, VendorModule, VendorPlatform, VendorStep
 from gorget.exceptions import GorgetConfigError
 from gorget.pipeline.artifact import build_derived_artifact, derived_artifact_path
+from gorget.pipeline.source import SourceChange
 from gorget.transform.vendor.base import (
     VendorEcosystem,
     VendorResult,
@@ -76,7 +77,7 @@ class VendorHandler:
                 archive_path, archive_name, "vendor:pnpm offline-cache", ctx.dry_run
             )
             modules = (
-                resolve_vendored_modules(step, ctx.source_dir)
+                resolve_vendored_modules(step, ctx.source_dir, ctx.toolchain)
                 if not ctx.dry_run and ctx.source_dir is not None
                 else ()
             )
@@ -88,6 +89,7 @@ class VendorHandler:
             )
 
         vendor_source_dir: Path | None = None
+        source_changes: list[SourceChange] = []
 
         if not ctx.dry_run:
             if ctx.source_dir is None:
@@ -126,14 +128,13 @@ class VendorHandler:
                         gradle_task=step.task if step.ecosystem == "gradle" else None,
                     )
                     module_outputs.append((module, output))
-                if step.sync_go_modules:
-                    self._sync_go_module_files(source_dir, vendor_source_dir, step)
-                if step.ecosystem == "yarn":
-                    for module in step.modules:
-                        for filename in ("yarn.lock", ".yarnrc.yml"):
-                            generated = vendor_source_dir / module.path / filename
-                            if generated.is_file():
-                                shutil.copyfile(generated, source_dir / module.path / filename)
+                for module in step.modules:
+                    for filename in ecosystem.source_files(sync_go_modules=step.sync_go_modules):
+                        relative = Path(module.path) / filename
+                        generated = vendor_source_dir / relative
+                        source_changes.append(SourceChange(
+                            relative, generated.read_bytes() if generated.is_file() else None
+                        ))
                 mtime = commit_timestamp(source_dir)
                 root_files = (
                     ecosystem.archive_root_files(module_outputs[0][1].parent)
@@ -155,14 +156,14 @@ class VendorHandler:
             archive_path, archive_name, f"vendor:{step.ecosystem}", ctx.dry_run
         )
         modules = (
-            resolve_vendored_modules(step, vendor_source_dir)
+            resolve_vendored_modules(step, vendor_source_dir, ctx.toolchain)
             if vendor_source_dir is not None
             else ()
         )
         return VendorResult(
             artifacts=(artifact,),
             modules=modules,
-            source_changed=step.sync_go_modules or step.ecosystem == "yarn",
+            source_changes=tuple(source_changes),
         )
 
     @staticmethod
@@ -197,17 +198,3 @@ class VendorHandler:
                 sync_go_modules=True,
             )
         return ecosystem.vendor(module_dir, toolchain, package_dir, use_workspace, platforms)
-
-    @staticmethod
-    def _sync_go_module_files(source_dir: Path, vendor_source_dir: Path, step: VendorStep) -> None:
-        """Copy module metadata, but never the generated vendor tree, to Source0."""
-        for module in step.modules:
-            source_module = source_dir / module.path
-            vendor_module = vendor_source_dir / module.path
-            for filename in ("go.mod", "go.sum", "go.work", "go.work.sum"):
-                generated = vendor_module / filename
-                destination = source_module / filename
-                if generated.is_file():
-                    shutil.copyfile(generated, destination)
-                elif destination.is_file():
-                    destination.unlink()

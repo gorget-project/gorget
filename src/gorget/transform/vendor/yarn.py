@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import re
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -12,7 +10,7 @@ import yaml
 
 from gorget.config.schema import _DEFAULT_NPM_PLATFORMS, ToolchainEntry, VendorPlatform
 from gorget.exceptions import GorgetTransientError
-from gorget.toolchain import wrap_command
+from gorget.package_manager import PackageManager, yarn_is_berry
 from gorget.util.subprocess_run import run
 
 # Berry = yarn v2+. Its CLI, config file (.yarnrc.yml), and cache layout differ
@@ -23,23 +21,12 @@ from gorget.util.subprocess_run import run
 # `packageManager` and a `.yarn/releases/*.cjs` binary, and even yarn v1.22 on
 # PATH dispatches to that pinned Berry, so the command must match Berry's flags.
 _BERRY_CACHE_REL = ".yarn/cache"
-_PACKAGE_MANAGER_RE = re.compile(r"^yarn@(\d+)")
-
-
-def yarn_command(module_dir: Path, args: Sequence[str]) -> list[str]:
-    """Use the project's checked-in Yarn without a global Yarn install."""
-    yarnrc = module_dir / ".yarnrc.yml"
-    config = yaml.safe_load(yarnrc.read_text()) if yarnrc.is_file() else {}
-    yarn_path = (config or {}).get("yarnPath")
-    if yarn_path:
-        binary = module_dir / yarn_path
-        if not binary.is_file():
-            raise GorgetTransientError(f"Configured Yarn release does not exist: {binary}")
-        return ["node", str(binary), *args]
-    return ["yarn", *args]
 
 
 class YarnVendor:
+    def source_files(self, *, sync_go_modules: bool = False) -> tuple[str, ...]:
+        return ("yarn.lock", ".yarnrc.yml")
+
     def vendor(
         self,
         module_dir: Path,
@@ -66,9 +53,7 @@ class YarnVendor:
                 ["yarn", "install", "--mode", "update-lockfile"],
                 ["yarn", "install", "--immutable", "--mode", "skip-build"],
             ):
-                result = run(
-                    wrap_command(yarn_command(module_dir, cmd[1:]), toolchain), cwd=module_dir
-                )
+                result = PackageManager(module_dir, toolchain, runner=run).run(cmd)
                 if result.returncode != 0:
                     raise GorgetTransientError(
                         f"yarn install failed in {module_dir}: {result.stderr.strip()}"
@@ -83,7 +68,7 @@ class YarnVendor:
                 "--cache-folder",
                 str(cache_dir),
             ]
-            result = run(wrap_command(yarn_command(module_dir, cmd[1:]), toolchain), cwd=module_dir)
+            result = PackageManager(module_dir, toolchain, runner=run).run(cmd)
             if result.returncode != 0:
                 raise GorgetTransientError(
                     f"yarn install failed in {module_dir}: {result.stderr.strip()}"
@@ -97,27 +82,7 @@ class YarnVendor:
         return []
 
     def _is_berry(self, module_dir: Path) -> bool:
-        """Yarn v2+ (Berry) vs classic v1.
-
-        Prefer package.json's `packageManager` (the authoritative pin), then
-        fall back to Berry-only markers: a `.yarnrc.yml` with `yarnPath`, or a
-        bundled `.yarn/releases/` binary.
-        """
-        pkg = module_dir / "package.json"
-        if pkg.exists():
-            try:
-                pm = json.loads(pkg.read_text()).get("packageManager", "")
-            except (json.JSONDecodeError, OSError):
-                pm = ""
-            match = _PACKAGE_MANAGER_RE.match(pm or "")
-            if match:
-                return int(match.group(1)) >= 2
-        yarnrc = module_dir / ".yarnrc.yml"
-        if yarnrc.exists():
-            cfg = yaml.safe_load(yarnrc.read_text()) or {}
-            if "yarnPath" in cfg:
-                return True
-        return (module_dir / ".yarn" / "releases").is_dir()
+        return yarn_is_berry(module_dir)
 
     def _write_yarnrc(
         self, module_dir: Path, platforms: Sequence[VendorPlatform], *, berry: bool
