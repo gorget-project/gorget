@@ -16,6 +16,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import yaml
+
+from gorget.exceptions import GorgetConfigError
+
 PACKAGE_NAME_RE = re.compile(r"^(?:@[^/@]+/)?[^/@]+$")
 
 
@@ -120,12 +124,136 @@ def _pnpm_reference(name: str, dependency: object) -> str | None:
     return f"{name}@{reference}"
 
 
+def _yarn_dependencies(package: dict) -> Any:
+    for section in ("dependencies", "optionalDependencies"):
+        yield from package.get(section, {}).items()
+
+
+def _yarn_descriptor_name(descriptor: str) -> str:
+    for protocol in ("@npm:", "@patch:", "@portal:", "@file:"):
+        if protocol in descriptor:
+            return descriptor.partition(protocol)[0]
+    return ""
+
+
+def _yarn_production_packages(
+    lock: str, root_package: dict, workspaces: dict
+) -> set[tuple[str, str]]:
+    data = yaml.safe_load(lock)
+    descriptors = {}
+    packages_by_name: dict[str, list[dict]] = {}
+    for key, package in data.items():
+        if key == "__metadata":
+            continue
+        for descriptor in key.split(", "):
+            descriptors[descriptor] = package
+            package_name = _yarn_descriptor_name(descriptor)
+            if package_name:
+                packages_by_name.setdefault(package_name, []).append(package)
+
+    provides = set()
+    queue = [
+        (root_package.get("name", ""), name, reference)
+        for name, reference in _yarn_dependencies(root_package)
+    ]
+    visited_descriptors = set()
+    visited_workspaces = set()
+    resolutions = root_package.get("resolutions", {})
+    while queue:
+        parent, name, reference = queue.pop()
+        bare_reference = reference.removeprefix("npm:")
+        overrides = [
+            value
+            for pattern, value in resolutions.items()
+            if pattern
+            in (
+                name,
+                f"{name}@{reference}",
+                f"{name}@{bare_reference}",
+                f"{name}@npm:{bare_reference}",
+                f"{parent}/{name}",
+            )
+        ]
+        if len(set(overrides)) == 1:
+            reference = overrides[0]
+
+        if reference.startswith("workspace:"):
+            if name in visited_workspaces:
+                continue
+            visited_workspaces.add(name)
+            workspace = workspaces.get(name)
+            if workspace is None:
+                raise GorgetConfigError(f"Yarn workspace not found: {name}")
+            queue.extend(
+                (name, child, child_reference)
+                for child, child_reference in _yarn_dependencies(workspace)
+            )
+            continue
+
+        descriptor = f"{name}@{reference}"
+        package = descriptors.get(descriptor)
+        if package is None and not reference.startswith(("npm:", "patch:", "portal:", "file:")):
+            descriptor = f"{name}@npm:{reference}"
+            package = descriptors.get(descriptor)
+        if package is None:
+            locator_matches = [
+                candidate for candidate in descriptors if candidate.startswith(f"{descriptor}::")
+            ]
+            if len(locator_matches) == 1:
+                package = descriptors[locator_matches[0]]
+        if package is None:
+            candidates = packages_by_name.get(name, [])
+            resolutions_for_name = {candidate.get("resolution") for candidate in candidates}
+            if len(resolutions_for_name) == 1:
+                package = candidates[0]
+        if package is None:
+            raise GorgetConfigError(f"Yarn descriptor not found: {descriptor}")
+        if descriptor in visited_descriptors:
+            continue
+        visited_descriptors.add(descriptor)
+
+        resolution = package.get("resolution", "")
+        resolved_name = _yarn_descriptor_name(resolution) or name
+        version = package.get("version")
+        if version:
+            provides.add((resolved_name, str(version)))
+        queue.extend(
+            (resolved_name, child, child_reference)
+            for child, child_reference in _yarn_dependencies(package)
+        )
+    return provides
+
+
 def yarn_provides(lockfile: Path) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
     """Returns (production, all) from yarn.lock.
 
-    yarn.lock doesn't distinguish dev/prod -- return same set for both.
+    Berry production dependencies are traversed from package.json and workspace manifests.
+    Classic lockfiles return all dependencies for both scopes.
     """
     text = lockfile.read_text()
+    if re.search(r"^__metadata:", text, re.MULTILINE):
+        data = yaml.safe_load(text)
+        all_deps = set()
+        for key, entry in data.items():
+            if key == "__metadata":
+                continue
+            name = _yarn_descriptor_name(entry.get("resolution", ""))
+            if name and PACKAGE_NAME_RE.fullmatch(name) and entry.get("version"):
+                all_deps.add((name, str(entry["version"])))
+        manifest = lockfile.parent / "package.json"
+        if not manifest.is_file():
+            return all_deps, all_deps
+        root_package = json.loads(manifest.read_text())
+        patterns = root_package.get("workspaces", [])
+        if isinstance(patterns, dict):
+            patterns = patterns.get("packages", [])
+        workspaces = {}
+        for pattern in patterns:
+            for package_json in lockfile.parent.glob(f"{pattern}/package.json"):
+                package = json.loads(package_json.read_text())
+                if package.get("name"):
+                    workspaces[package["name"]] = package
+        return _yarn_production_packages(text, root_package, workspaces), all_deps
     provides: set[tuple[str, str]] = set()
     current_name: str | None = None
     for line in text.splitlines():
