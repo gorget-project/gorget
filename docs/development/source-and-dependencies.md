@@ -70,3 +70,27 @@ unchanged input bytes, cache separation, and repeated archive checksums. Workspa
 tests check failed updates, file deletions, and sibling dependencies. Inventory
 tests check duplicate copies, workspace scope, and agreement with policy and
 bundled Provides. Existing integration tests use real tools when available.
+
+## Add or change an ecosystem adapter
+
+1. Implement the vendor interface in `src/gorget/transform/vendor/`. Declare
+   published metadata through `source_files`. Return an empty tuple if vendoring
+   must preserve Source0. Keep generated caches outside the declared file set.
+2. Add resolved-copy parsing to `read_inventory` in `src/gorget/dependencies/`.
+   Preserve each copy's identity and location. Keep production scope separate
+   from the complete inventory used for version checks.
+3. If the ecosystem supports updates, implement `apply_many` and declare its
+   metadata files in `dependencies/update.py`. Apply all manifest edits before
+   resolution when the package manager supports that order.
+4. Run commands through `PackageManager`. Pass the required workspace scope,
+   toolchain, environment, and command runner. Keep ecosystem-specific cache
+   layouts and platform flags in the adapter.
+5. Register the adapter and update the accepted ecosystem fields in the pipeline
+   schema. Document any new user-facing options in the README.
+6. Extend the shared contract tests. Include unchanged metadata, file deletion,
+   failed resolution, older dependency copies, and offline archive use where the
+   tool supports it.
+
+Test through the inventory, updater, workspace, and transform interfaces. Use the
+command-runner seam to simulate failures. Add real-tool integration checks for
+behavior that command simulations cannot establish.

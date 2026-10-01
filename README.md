@@ -552,6 +552,10 @@ using the same distinctly named binary pattern Fedora already uses for
 
 ## Local development
 
+For source-workspace ownership, dependency inventories, and adapter contracts,
+read [Source workspaces and dependencies](docs/development/source-and-dependencies.md).
+
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
