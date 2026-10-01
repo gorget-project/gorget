@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import shutil
+import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -22,6 +23,7 @@ from gorget.pipeline.state import StageState
 from gorget.policy.vendor_constraints import _RESOLVERS
 from gorget.toolchain import wrap_command
 from gorget.transform.base import TransformContext, ensure_source_dir
+from gorget.transform.vendor.yarn import yarn_command
 from gorget.util.subprocess_run import run
 from gorget.util.version import satisfies_constraint
 
@@ -106,8 +108,8 @@ def _yarn_install_cmd(module_dir: Path) -> list[str]:
     # Berry updates the lockfile from `resolutions` without a full fetch;
     # v1 regenerates yarn.lock honoring `resolutions` on a plain install.
     if _yarn_is_berry(module_dir):
-        return ["yarn", "install", "--mode", "update-lockfile"]
-    return ["yarn", "install"]
+        return yarn_command(module_dir, ["install", "--mode", "update-lockfile"])
+    return yarn_command(module_dir, ["install"])
 
 
 class _JsPin:
@@ -141,6 +143,12 @@ class _JsPin:
 
         specifier = _specifier(entry.version)
         data = json.loads(package_json.read_text())
+        # Remove specific Yarn selectors that can override a package-wide floor.
+        if self._overrides_path == ("resolutions",):
+            resolutions = data.setdefault("resolutions", {})
+            for selector in list(resolutions):
+                if re.fullmatch(rf"(?:.*/)?{re.escape(entry.dependency)}(?:@.*)?", selector):
+                    del resolutions[selector]
         # Reconcile the direct declaration if present (keeps the manifest honest).
         for key in ("dependencies", "devDependencies"):
             if key in data and entry.dependency in data[key]:
@@ -150,7 +158,19 @@ class _JsPin:
         package_json.write_text(json.dumps(data, indent=2) + "\n")
 
         cmd = self._install_cmd(module_dir)
-        result = run(wrap_command(cmd, toolchain), cwd=module_dir)
+        # Updating a lockfile must not populate Source0 with an offline cache.
+        # Berry serializes absolute cache paths into install-state.gz even in
+        # update-lockfile mode. Keep that transient state outside Source0.
+        with tempfile.TemporaryDirectory(prefix="gorget-yarn-state-") as state_dir:
+            env = (
+                {
+                    "YARN_ENABLE_GLOBAL_CACHE": "true",
+                    "YARN_INSTALL_STATE_PATH": str(Path(state_dir) / "install-state.gz"),
+                }
+                if _yarn_is_berry(module_dir)
+                else None
+            )
+            result = run(wrap_command(cmd, toolchain), cwd=module_dir, env=env)
         if result.returncode != 0:
             raise GorgetTransientError(
                 f"{cmd[0]} install failed in {module_dir}: {result.stderr.strip()}"
@@ -173,9 +193,7 @@ def _npm_prune_dependents(lock: dict, dependency: str) -> int:
     workspace-member roots (no `node_modules/` in the key) are never removed.
     """
     packages = lock.get("packages", {})
-    _DEP_FIELDS = (
-        "dependencies", "devDependencies", "optionalDependencies", "peerDependencies"
-    )
+    _DEP_FIELDS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
     to_remove = []
     for key, meta in packages.items():
         if "node_modules/" not in key:
@@ -292,9 +310,7 @@ class _CargoPin:
 
         specifier = _specifier(entry.version)
         text = cargo_toml.read_text()
-        pattern = re.compile(
-            rf'^(\s*{re.escape(entry.dependency)}\s*=\s*")[^"]*(")', re.MULTILINE
-        )
+        pattern = re.compile(rf'^(\s*{re.escape(entry.dependency)}\s*=\s*")[^"]*(")', re.MULTILINE)
         new_text, count = pattern.subn(rf"\g<1>{specifier}\g<2>", text)
         if count > 0:
             # Direct dependency: bump its declared requirement, then let Cargo
@@ -345,8 +361,7 @@ class _MavenPin:
             f"{prefix}dependencyManagement/{prefix}dependencies/{prefix}dependency"
         )
         declared = any(
-            child_text(dep, "groupId") == group_id
-            and child_text(dep, "artifactId") == artifact_id
+            child_text(dep, "groupId") == group_id and child_text(dep, "artifactId") == artifact_id
             for dep in [*direct, *managed]
         )
 
@@ -394,8 +409,7 @@ class _MavenPin:
         result = run(wrap_command(cmd, toolchain), cwd=module_dir)
         if result.returncode != 0:
             raise GorgetTransientError(
-                f"mvn versions:use-dep-version failed in {module_dir}: "
-                f"{result.stderr.strip()}"
+                f"mvn versions:use-dep-version failed in {module_dir}: {result.stderr.strip()}"
             )
 
 
