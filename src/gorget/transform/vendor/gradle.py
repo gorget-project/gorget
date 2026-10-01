@@ -8,11 +8,14 @@ from pathlib import Path
 
 from gorget.config.schema import ToolchainEntry, VendorPlatform
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.toolchain import wrap_command
+from gorget.package_manager import PackageManager
 from gorget.util.subprocess_run import run
 
 
 class GradleVendor:
+    def source_files(self, *, sync_go_modules: bool = False) -> tuple[str, ...]:
+        return ()
+
     def vendor(
         self,
         module_dir: Path,
@@ -33,9 +36,8 @@ class GradleVendor:
         vendor_dir = module_dir / "vendor"
         gradle = "./gradlew" if (module_dir / "gradlew").is_file() else "gradle"
         cmd = [gradle, "--no-daemon", task]
-        result = run(
-            wrap_command(cmd, toolchain),
-            cwd=module_dir,
+        result = PackageManager(module_dir, toolchain, runner=run).run(
+            cmd,
             env={"GRADLE_USER_HOME": str(vendor_dir)},
         )
         if result.returncode != 0:

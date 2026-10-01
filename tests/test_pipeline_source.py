@@ -1,4 +1,5 @@
 import tarfile
+from pathlib import Path
 
 import pytest
 
@@ -112,3 +113,71 @@ def test_commit_is_deterministic(tmp_path):
         return revision.path.read_bytes()
 
     assert run_once("a.tar.gz") == run_once("b.tar.gz")
+
+
+def test_source_changes_mark_only_real_changes_dirty(tmp_path):
+    from gorget.pipeline.source import SourceChange
+
+    (tmp_path / "lock").write_bytes(b"same")
+    source = SourceWorkspace(path=tmp_path)
+    source.apply_changes([SourceChange(Path("lock"), b"same"), SourceChange(Path("absent"), None)])
+    assert not source.dirty
+    source.apply_changes(
+        [SourceChange(Path("lock"), None), SourceChange(Path("nested/lock"), b"new")]
+    )
+    assert source.dirty
+    assert not (tmp_path / "lock").exists()
+    assert (tmp_path / "nested/lock").read_bytes() == b"new"
+
+
+def test_source_changes_validate_the_entire_set_before_writing(tmp_path):
+    from gorget.pipeline.source import SourceChange
+
+    source = SourceWorkspace(path=tmp_path)
+    with pytest.raises(GorgetConfigError, match="escapes"):
+        source.apply_changes(
+            [SourceChange(Path("valid"), b"new"), SourceChange(Path("../outside"), b"bad")]
+        )
+    assert not (tmp_path / "valid").exists()
+    assert not source.dirty
+
+
+def test_source_switch_does_not_retain_files_from_the_previous_archive(tmp_path):
+    artifacts = []
+    for name in ("first", "second"):
+        tree = tmp_path / name
+        tree.mkdir()
+        (tree / name).write_text(name)
+        archive = tmp_path / f"{name}.tar.gz"
+        repack_tar_gz(tree, archive)
+        artifacts.append(build_input_artifact(archive, archive.name, "url", False))
+    source = SourceWorkspace()
+    source.select(tmp_path / "work", artifacts, "first.tar.gz")
+    selected = source.select(tmp_path / "work", artifacts, "second.tar.gz")
+    assert (selected / "second").exists()
+    assert not (selected / "first").exists()
+
+
+def test_failed_metadata_edit_rolls_back_all_changes(tmp_path):
+    source = SourceWorkspace(path=tmp_path)
+    (tmp_path / "lock").write_text("original")
+    with pytest.raises(RuntimeError, match="failed resolution"):
+        with source.edit_metadata([Path("lock")]) as tree:
+            (tree / "lock").write_text("partial update")
+            raise RuntimeError("failed resolution")
+    assert (tmp_path / "lock").read_text() == "original"
+    assert not source.dirty
+
+
+def test_metadata_edit_preserves_relative_sibling_dependencies(tmp_path):
+    source = SourceWorkspace(path=tmp_path)
+    (tmp_path / "module").mkdir()
+    (tmp_path / "sibling").mkdir()
+    (tmp_path / "sibling/dependency").write_text("local dependency")
+    with source.edit_metadata([Path("module/lock")]) as tree:
+        assert (tree / "module/../sibling/dependency").read_text() == "local dependency"
+        (tree / "module/lock").write_text("new metadata")
+        (tree / "sibling/dependency").write_text("scratch mutation")
+    assert (tmp_path / "module/lock").read_text() == "new metadata"
+    assert (tmp_path / "sibling/dependency").read_text() == "local dependency"
+    assert source.dirty

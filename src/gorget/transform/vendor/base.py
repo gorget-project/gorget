@@ -10,6 +10,7 @@ from typing import Protocol
 from gorget.config.schema import ToolchainEntry, VendorPlatform, VendorStep
 from gorget.config.substitution import SubstitutionVars
 from gorget.pipeline.artifact import Artifact
+from gorget.pipeline.source import SourceChange
 from gorget.policy.base import VendoredModule
 
 
@@ -17,15 +18,20 @@ from gorget.policy.base import VendoredModule
 class VendorResult:
     artifacts: tuple[Artifact, ...]
     modules: tuple[VendoredModule, ...]
-    source_changed: bool = False
+    source_changes: tuple[SourceChange, ...] = ()
 
 
 def resolve_vendored_modules(
-    step: VendorStep, source_dir: Path
+    step: VendorStep, source_dir: Path, toolchain: Sequence[ToolchainEntry] = ()
 ) -> tuple[VendoredModule, ...]:
     """Resolve one vendor step's modules against the workspace it used."""
     return tuple(
-        VendoredModule(ecosystem=step.ecosystem, path=source_dir / module.path)
+        VendoredModule(
+            ecosystem=step.ecosystem,
+            path=source_dir / module.path,
+            use_workspace=module.use_workspace,
+            toolchain=tuple(toolchain),
+        )
         for module in step.modules
     )
 
@@ -34,12 +40,19 @@ class VendorRunContext(Protocol):
     work_dir: Path
     vars: SubstitutionVars
     dry_run: bool
-    source_dir: Path | None
+
+    @property
+    def source_dir(self) -> Path | None: ...
+
     toolchain: list[ToolchainEntry]
     package_dir: Path
 
 
 class VendorEcosystem(Protocol):
+    def source_files(self, *, sync_go_modules: bool = False) -> tuple[str, ...]:
+        """Declare metadata that vendoring must publish into the source archive."""
+        ...
+
     def vendor(
         self,
         module_dir: Path,

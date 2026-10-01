@@ -63,10 +63,12 @@ def _fake_run(calls):
         if args[:2] == ["git", "clone"]:
             dest = Path(args[-1])
             dest.mkdir(parents=True, exist_ok=True)
-            (dest / "go.mod").write_text(
-                "module example\n\nrequire golang.org/x/net v0.20.0\n"
-            )
+            (dest / "go.mod").write_text("module example\n\nrequire golang.org/x/net v0.20.0\n")
             (dest / "go.sum").write_text("")
+        elif args[:3] == ["go", "list", "-m"]:
+            text = (Path(cwd) / "go.mod").read_text()
+            version = "v0.23.0" if "v0.23.0" in text else "v0.20.0"
+            return subprocess.CompletedProcess(args, 0, "golang.org/x/net " + version, "")
         elif "edit" in args:
             gomod = Path(cwd) / "go.mod"
             gomod.write_text(gomod.read_text().replace("v0.20.0", "v0.23.0"))
@@ -85,12 +87,8 @@ def test_git_fetch_then_vendor_bump_then_vendor(tmp_path, mocker):
     calls = []
     fake_run = _fake_run(calls)
     mocker.patch("gorget.fetch.git.run", side_effect=fake_run)
-    mocker.patch("gorget.transform.vendor_bump.run", side_effect=fake_run)
+    mocker.patch("gorget.dependencies.update.run", side_effect=fake_run)
     mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_run)
-    # This test mocks the package-manager calls, so the real resolver can't see
-    # a bumped version -- disable skip-check/post-verify to keep it focused on
-    # stage wiring (bump runs before vendor, artifacts produced).
-    mocker.patch.dict("gorget.transform.vendor_bump._RESOLVERS", clear=True)
 
     ctx = make_ctx(tmp_path, PIPELINE_YAML)
     spec = resolve_pipeline_spec(ctx)
@@ -199,7 +197,9 @@ def test_vendor_source_switch_rejects_uncommitted_source_changes(tmp_path, mocke
 
     ctx = mocker.Mock(dry_run=False)
     state = mocker.Mock()
-    state.source.path = tmp_path
-    state.source.dirty = True
+    from gorget.pipeline.source import SourceWorkspace
+
+    state.source = SourceWorkspace(path=tmp_path, dirty=True)
+    state.artifacts = [mocker.Mock(output_name="source.tar.gz")]
     with pytest.raises(GorgetConfigError, match="uncommitted changes"):
         _VendorStepAdapter().run(VendorStep(ecosystem="cargo", source="source.tar.gz"), ctx, state)

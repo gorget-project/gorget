@@ -7,11 +7,14 @@ from pathlib import Path
 
 from gorget.config.schema import ToolchainEntry, VendorPlatform
 from gorget.exceptions import GorgetTransientError
-from gorget.toolchain import wrap_command
+from gorget.package_manager import PackageManager
 from gorget.util.subprocess_run import run
 
 
 class CargoVendor:
+    def source_files(self, *, sync_go_modules: bool = False) -> tuple[str, ...]:
+        return ()
+
     def vendor(
         self,
         module_dir: Path,
@@ -23,7 +26,7 @@ class CargoVendor:
     ) -> Path:
         vendor_dir = module_dir / "vendor"
         cmd = ["cargo", "vendor", str(vendor_dir)]
-        result = run(wrap_command(cmd, toolchain), cwd=module_dir)
+        result = PackageManager(module_dir, toolchain, runner=run).run(cmd)
         if result.returncode != 0:
             raise GorgetTransientError(
                 f"cargo vendor failed in {module_dir}: {result.stderr.strip()}"
