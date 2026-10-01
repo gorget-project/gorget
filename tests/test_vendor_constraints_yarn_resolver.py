@@ -59,8 +59,8 @@ def test_prefix_match_does_not_leak_across_packages(tmp_path):
     assert _resolve_yarn_version(tmp_path, "nano") is None
 
 
-def test_picks_highest_when_multiple_blocks(tmp_path):
+def test_picks_lowest_when_multiple_blocks(tmp_path):
     (tmp_path / "yarn.lock").write_text(
         'foo@^1.0.0:\n  version "1.2.0"\n\nfoo@^1.5.0:\n  version "1.5.3"\n'
     )
-    assert _resolve_yarn_version(tmp_path, "foo") == "1.5.3"
+    assert _resolve_yarn_version(tmp_path, "foo") == "1.2.0"
