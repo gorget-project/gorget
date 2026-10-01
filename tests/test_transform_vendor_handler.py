@@ -8,6 +8,7 @@ from gorget.config.schema import ToolchainEntry, VendorModule, VendorStep
 from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError
 from gorget.fetch.base import FetchContext
+from gorget.pipeline.source import SourceWorkspace
 from gorget.transform.vendor import VendorHandler
 
 
@@ -55,6 +56,7 @@ def test_vendor_single_module_produces_archive(tmp_path, mocker):
         {
             "go": Mock(
                 vendor=Mock(side_effect=fake_vendor),
+                source_files=Mock(return_value=()),
                 archive_root_files=Mock(side_effect=lambda module_dir: [module_dir / "go.sum"]),
             )
         },
@@ -82,7 +84,8 @@ def test_vendor_multi_submodule_combines_all_modules(tmp_path, mocker):
         return vendor_dir
 
     mocker.patch(
-        "gorget.transform.vendor._ECOSYSTEMS", {"go": Mock(vendor=Mock(side_effect=fake_vendor))}
+        "gorget.transform.vendor._ECOSYSTEMS",
+        {"go": Mock(vendor=Mock(side_effect=fake_vendor), source_files=Mock(return_value=()))},
     )
     step = VendorStep(
         ecosystem="go",
@@ -126,6 +129,7 @@ def test_vendor_archive_members_use_source_commit_timestamp(tmp_path, mocker):
         {
             "go": Mock(
                 vendor=Mock(side_effect=fake_vendor),
+                source_files=Mock(return_value=()),
                 archive_root_files=Mock(side_effect=lambda module_dir: [module_dir / "go.mod"]),
             )
         },
@@ -157,7 +161,9 @@ def test_vendor_tar_bz2_archive_name_produces_real_bzip2_file(tmp_path, mocker):
         "gorget.transform.vendor._ECOSYSTEMS",
         {
             "go": Mock(
-                vendor=Mock(side_effect=fake_vendor), archive_root_files=Mock(return_value=[])
+                vendor=Mock(side_effect=fake_vendor),
+                source_files=Mock(return_value=()),
+                archive_root_files=Mock(return_value=[]),
             )
         },
     )
@@ -187,6 +193,7 @@ def test_vendor_removes_generated_output_after_archiving(tmp_path, mocker):
         {
             "go": Mock(
                 vendor=Mock(side_effect=fake_vendor),
+                source_files=Mock(return_value=()),
                 archive_root_files=Mock(return_value=[]),
             )
         },
@@ -223,6 +230,7 @@ def test_vendor_isolates_all_backend_changes_from_source(tmp_path, mocker):
         {
             "go": Mock(
                 vendor=Mock(side_effect=fake_vendor),
+                source_files=Mock(return_value=()),
                 archive_root_files=Mock(return_value=[]),
             )
         },
@@ -252,9 +260,7 @@ def test_vendor_removes_failed_disposable_workspace(tmp_path, mocker):
     )
 
     with pytest.raises(RuntimeError, match="vendor failed"):
-        VendorHandler().run(
-            VendorStep(ecosystem="go"), make_ctx(tmp_path, source_dir=source_dir)
-        )
+        VendorHandler().run(VendorStep(ecosystem="go"), make_ctx(tmp_path, source_dir=source_dir))
 
     assert not (source_dir / "scratch").exists()
     assert list(tmp_path.glob("_vendor_source-*")) == []
@@ -275,6 +281,7 @@ def test_vendor_preserves_preexisting_output_directory(tmp_path, mocker):
         {
             "go": Mock(
                 vendor=Mock(side_effect=fake_vendor),
+                source_files=Mock(return_value=()),
                 archive_root_files=Mock(return_value=[]),
             )
         },
@@ -297,6 +304,9 @@ def test_vendor_calls_ecosystem_cleanup_after_archiving(tmp_path, mocker):
     (store_dir / "package.tgz").write_text("offline package")
 
     class TemporaryVendor:
+        def source_files(self, *, sync_go_modules=False):
+            return ()
+
         def __init__(self):
             self.cleaned = []
 
@@ -351,16 +361,20 @@ def test_vendor_threads_toolchain_to_ecosystem(tmp_path, mocker):
     mock_vendor = Mock(side_effect=fake_vendor)
     mocker.patch(
         "gorget.transform.vendor._ECOSYSTEMS",
-        {"go": Mock(vendor=mock_vendor, archive_root_files=Mock(return_value=[]))},
+        {
+            "go": Mock(
+                vendor=mock_vendor,
+                source_files=Mock(return_value=()),
+                archive_root_files=Mock(return_value=[]),
+            )
+        },
     )
     step = VendorStep(ecosystem="go")
     toolchain = [ToolchainEntry(name="go", version="1.22.0")]
     result = VendorHandler().run(
         step, make_ctx(tmp_path, source_dir=source_dir, toolchain=toolchain)
     )
-    mock_vendor.assert_called_once_with(
-        result.modules[0].path, toolchain, tmp_path, True, ()
-    )
+    mock_vendor.assert_called_once_with(result.modules[0].path, toolchain, tmp_path, True, ())
 
 
 def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
@@ -382,7 +396,13 @@ def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
     mock_vendor = Mock(side_effect=fake_vendor)
     mocker.patch(
         "gorget.transform.vendor._ECOSYSTEMS",
-        {"go": Mock(vendor=mock_vendor, archive_root_files=Mock(return_value=[]))},
+        {
+            "go": Mock(
+                vendor=mock_vendor,
+                source_files=Mock(return_value=()),
+                archive_root_files=Mock(return_value=[]),
+            )
+        },
     )
     step = VendorStep(ecosystem="go", modules=[VendorModule(path=".", use_workspace=False)])
     result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
@@ -403,16 +423,20 @@ def test_vendor_threads_gradle_task_to_ecosystem(tmp_path, mocker):
     mock_vendor = Mock(side_effect=fake_vendor)
     mocker.patch(
         "gorget.transform.vendor._ECOSYSTEMS",
-        {"gradle": Mock(vendor=mock_vendor, archive_root_files=Mock(return_value=[]))},
+        {
+            "gradle": Mock(
+                vendor=mock_vendor,
+                source_files=Mock(return_value=()),
+                archive_root_files=Mock(return_value=[]),
+            )
+        },
     )
     task = ":distributions-full:binDistributionZip"
     step = VendorStep(ecosystem="gradle", task=task)
 
     result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
 
-    mock_vendor.assert_called_once_with(
-        result.modules[0].path, [], tmp_path, True, (), task=task
-    )
+    mock_vendor.assert_called_once_with(result.modules[0].path, [], tmp_path, True, (), task=task)
 
 
 def test_yarn_vendor_syncs_lock_and_config_but_keeps_cache_separate(tmp_path, mocker):
@@ -434,14 +458,19 @@ def test_yarn_vendor_syncs_lock_and_config_but_keeps_cache_separate(tmp_path, mo
         "gorget.transform.vendor._ECOSYSTEMS",
         {
             "yarn": Mock(
-                vendor=Mock(side_effect=fake_vendor), archive_root_files=Mock(return_value=[])
+                vendor=Mock(side_effect=fake_vendor),
+                source_files=Mock(return_value=("yarn.lock", ".yarnrc.yml")),
+                archive_root_files=Mock(return_value=[]),
             )
         },
     )
     result = VendorHandler().run(
         VendorStep(ecosystem="yarn"), make_ctx(tmp_path, source_dir=source_dir)
     )
-    assert result.source_changed
+    assert (source_dir / "yarn.lock").read_text() == "original"
+    workspace = SourceWorkspace(path=source_dir)
+    workspace.apply_changes(result.source_changes)
+    assert workspace.dirty
     assert (source_dir / "yarn.lock").read_text() == "new checksums"
     assert (source_dir / ".yarnrc.yml").read_text() == "compressionLevel: 0"
     assert not (source_dir / ".yarn/cache").exists()

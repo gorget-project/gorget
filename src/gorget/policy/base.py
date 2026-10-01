@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from gorget.config.schema import ToolchainEntry
+
 
 @dataclass(frozen=True, kw_only=True)
 class CheckResult:
@@ -32,3 +34,5 @@ class CheckResult:
 class VendoredModule:
     ecosystem: str
     path: Path
+    use_workspace: bool = True
+    toolchain: tuple[ToolchainEntry, ...] = ()

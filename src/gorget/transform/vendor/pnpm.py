@@ -20,29 +20,28 @@ from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 from gorget.config.schema import _DEFAULT_NPM_PLATFORMS, ToolchainEntry, VendorPlatform
+from gorget.dependencies.lockfiles import PACKAGE_NAME_RE as _PACKAGE_NAME_RE
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.toolchain import wrap_command
-from gorget.transform.vendor.lockfile import PACKAGE_NAME_RE as _PACKAGE_NAME_RE
+from gorget.package_manager import PackageManager
 from gorget.util.archive import pack_files
 from gorget.util.subprocess_run import run
 
-_PACKAGE_MANAGER_RE = re.compile(
-    r"^pnpm@(?P<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\+.*)?$"
-)
+_PACKAGE_MANAGER_RE = re.compile(r"^pnpm@(?P<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\+.*)?$")
 _PNPM_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
 
 
 def _resolve_pnpm_version(
-    manifest: dict[str, object], manifest_path: Path,
-    module_dir: Path, toolchain: Sequence[ToolchainEntry],
+    manifest: dict[str, object],
+    manifest_path: Path,
+    module_dir: Path,
+    toolchain: Sequence[ToolchainEntry],
 ) -> str:
     declared_manager = manifest.get("packageManager")
     if declared_manager is not None:
         match = _PACKAGE_MANAGER_RE.fullmatch(str(declared_manager))
         if not match:
             raise GorgetConfigError(
-                f"Invalid pnpm packageManager declaration in {manifest_path}: "
-                f"{declared_manager!r}"
+                f"Invalid pnpm packageManager declaration in {manifest_path}: {declared_manager!r}"
             )
         return match.group("version")
 
@@ -56,7 +55,7 @@ def _resolve_pnpm_version(
     if isinstance(dev_version, str) and _PNPM_VERSION_RE.fullmatch(dev_version):
         return dev_version
 
-    result = run(wrap_command(["pnpm", "--version"], toolchain), cwd=module_dir)
+    result = PackageManager(module_dir, toolchain, runner=run).run(["pnpm", "--version"])
     version = result.stdout.strip()
     if result.returncode != 0 or not _PNPM_VERSION_RE.fullmatch(version):
         raise GorgetConfigError(
@@ -67,6 +66,9 @@ def _resolve_pnpm_version(
 
 
 class PnpmVendor:
+    def source_files(self, *, sync_go_modules: bool = False) -> tuple[str, ...]:
+        return ()
+
     def vendor(
         self,
         module_dir: Path,
@@ -82,13 +84,14 @@ class PnpmVendor:
             with _preserve_node_modules(module_dir) as clean_node_modules:
                 for platform in resolved:
                     cmd = [
-                        "pnpm", "fetch",
+                        "pnpm",
+                        "fetch",
                         "--ignore-scripts",
-                        "--store-dir", str(store_dir),
+                        "--store-dir",
+                        str(store_dir),
                     ]
-                    result = run(
-                        wrap_command(cmd, toolchain),
-                        cwd=module_dir,
+                    result = PackageManager(module_dir, toolchain, runner=run).run(
+                        cmd,
                         env={
                             "CI": "true",
                             "npm_config_cpu": platform.cpu,
@@ -151,9 +154,7 @@ class PnpmVendor:
             shutil.copytree(
                 module_dir,
                 scratch_module,
-                ignore=shutil.ignore_patterns(
-                    ".git", "node_modules", ".pnpm-store", ".pnpm-cache"
-                ),
+                ignore=shutil.ignore_patterns(".git", "node_modules", ".pnpm-store", ".pnpm-cache"),
             )
             pnpm_root = root / ".pnpm"
             pnpm_root.mkdir()
@@ -165,15 +166,16 @@ class PnpmVendor:
                     f"@pnpm/exe.linux-x64@{pnpm_version}",
                     f"@pnpm/exe.linux-arm64@{pnpm_version}",
                 ]
-            npm_result = run(
-                wrap_command(
-                    [
-                        "npm", "install", "--prefix", str(pnpm_root),
-                        "--ignore-scripts", "--force", *install_packages,
-                    ],
-                    toolchain,
-                ),
-                cwd=scratch_module,
+            npm_result = PackageManager(scratch_module, toolchain, runner=run).run(
+                [
+                    "npm",
+                    "install",
+                    "--prefix",
+                    str(pnpm_root),
+                    "--ignore-scripts",
+                    "--force",
+                    *install_packages,
+                ],
                 env={"CI": "true"},
             )
             if npm_result.returncode != 0:
@@ -189,19 +191,18 @@ class PnpmVendor:
                 # working shim for project scripts that invoke pnpm again.
                 pnpm_wrapper.unlink(missing_ok=True)
                 pnpm_wrapper.write_text(
-                    "#!/bin/sh\n"
-                    'exec node "$(dirname "$0")/../pnpm/bin/pnpm.mjs" "$@"\n'
+                    '#!/bin/sh\nexec node "$(dirname "$0")/../pnpm/bin/pnpm.mjs" "$@"\n'
                 )
                 pnpm_wrapper.chmod(0o755)
                 pnpm_command = ["node", str(pnpm_mjs)]
             elif pnpm_wrapper.is_file():
                 pnpm_command = [str(pnpm_wrapper)]
             else:
-                raise GorgetConfigError(
-                    f"pnpm entry point not found: {pnpm_mjs} or {pnpm_wrapper}"
-                )
+                raise GorgetConfigError(f"pnpm entry point not found: {pnpm_mjs} or {pnpm_wrapper}")
 
-            version_result = run(wrap_command([*pnpm_command, "--version"], toolchain))
+            version_result = PackageManager(None, toolchain, runner=run).run(
+                [*pnpm_command, "--version"]
+            )
             active_version = version_result.stdout.strip().removeprefix("v")
             if version_result.returncode != 0 or active_version != pnpm_version:
                 raise GorgetConfigError(
@@ -221,18 +222,20 @@ class PnpmVendor:
             for platform in install_platforms:
                 platform_args = (
                     ["--cpu", platform.cpu, "--os", platform.os, "--libc", platform.libc]
-                    if platform is not None else []
+                    if platform is not None
+                    else []
                 )
-                install_result = run(
-                    wrap_command(
-                        [
-                            *pnpm_command, "install", "--force", "--ignore-scripts",
-                            "--frozen-lockfile", "--store-dir", str(store_dir),
-                            *platform_args,
-                        ],
-                        toolchain,
-                    ),
-                    cwd=scratch_module,
+                install_result = PackageManager(scratch_module, toolchain, runner=run).run(
+                    [
+                        *pnpm_command,
+                        "install",
+                        "--force",
+                        "--ignore-scripts",
+                        "--frozen-lockfile",
+                        "--store-dir",
+                        str(store_dir),
+                        *platform_args,
+                    ],
                     env={"CI": "true", "XDG_CACHE_HOME": str(cache_dir)},
                 )
                 if install_result.returncode != 0:
@@ -304,18 +307,15 @@ class PnpmVendor:
             self._download_packument(registry, package_name, metadata_path)
 
     @staticmethod
-    def _registry_for(
-        module_dir: Path, scope: str, toolchain: Sequence[ToolchainEntry]
-    ) -> str:
+    def _registry_for(module_dir: Path, scope: str, toolchain: Sequence[ToolchainEntry]) -> str:
         key = f"{scope}:registry" if scope else "registry"
-        result = run(wrap_command(["npm", "config", "get", key], toolchain), cwd=module_dir)
+        result = PackageManager(module_dir, toolchain, runner=run).run(
+            ["npm", "config", "get", key]
+        )
         registry = result.stdout.strip()
-        if scope and (
-            result.returncode != 0 or not registry.startswith(("http://", "https://"))
-        ):
-            result = run(
-                wrap_command(["npm", "config", "get", "registry"], toolchain),
-                cwd=module_dir,
+        if scope and (result.returncode != 0 or not registry.startswith(("http://", "https://"))):
+            result = PackageManager(module_dir, toolchain, runner=run).run(
+                ["npm", "config", "get", "registry"]
             )
             registry = result.stdout.strip()
         if result.returncode != 0 or not registry.startswith(("http://", "https://")):
@@ -332,16 +332,11 @@ class PnpmVendor:
         if path_aware:
             registry_key = f"{parsed.scheme}%3A+{parsed.hostname}"
             port = parsed.port
-            if port is not None and (parsed.scheme, port) not in {
-                ("http", 80), ("https", 443)
-            }:
+            if port is not None and (parsed.scheme, port) not in {("http", 80), ("https", 443)}:
                 registry_key += f"+{port}"
             path = parsed.path.strip("/")
             if path:
-                parts = [
-                    quote(part, safe="-._").replace("~", "%7E")
-                    for part in path.split("/")
-                ]
+                parts = [quote(part, safe="-._").replace("~", "%7E") for part in path.split("/")]
                 registry_key += "%2F" + "+".join(parts)
                 if path.lower() != path:
                     registry_key += f"%5F{sha256(path.encode()).hexdigest()}"
@@ -381,16 +376,10 @@ class PnpmVendor:
                 if last_modified:
                     modified = parsedate_to_datetime(last_modified)
                     headers["modified"] = (
-                        modified.astimezone(UTC).isoformat().removesuffix("+00:00")
-                        + "Z"
+                        modified.astimezone(UTC).isoformat().removesuffix("+00:00") + "Z"
                     )
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(
-                    json.dumps(headers).encode()
-                    + b"\n"
-                    + body
-                    + b"\n"
-                )
+                dest.write_bytes(json.dumps(headers).encode() + b"\n" + body + b"\n")
                 return
             except (
                 URLError,
@@ -404,6 +393,7 @@ class PnpmVendor:
                         f"Could not download registry metadata for {package_name}: {exc}"
                     ) from exc
                 time.sleep(2**attempt)
+
 
 def _node_modules_dirs(module_dir: Path) -> list[Path]:
     found: list[Path] = []

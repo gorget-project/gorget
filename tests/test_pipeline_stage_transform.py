@@ -3,6 +3,8 @@ import tarfile
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from gorget.config.schema import (
     PackStep,
     PipelineSpec,
@@ -68,9 +70,7 @@ def test_dispatches_strip_tarball_and_replaces_artifact(tmp_path):
 
     ctx = make_run_ctx(tmp_path)
     state = make_state(work_dir, artifacts=[artifact])
-    spec = PipelineSpec(
-        transform=TransformSection(steps=[StripTarballStep(paths=["*/drop.txt"])])
-    )
+    spec = PipelineSpec(transform=TransformSection(steps=[StripTarballStep(paths=["*/drop.txt"])]))
 
     result = TransformStage().run(ctx, spec, state)
 
@@ -98,9 +98,7 @@ def test_source_commit_keeps_paths_removed_by_earlier_strip(tmp_path, mocker):
             )
         if args == ["go", "mod", "vendor"]:
             (cwd / "vendor").mkdir()
-            (cwd / "vendor" / "modules.txt").write_text(
-                "example.com/dependency v1.0.0\n"
-            )
+            (cwd / "vendor" / "modules.txt").write_text("example.com/dependency v1.0.0\n")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     mocker.patch("gorget.transform.vendor.go.run", side_effect=fake_go_vendor)
@@ -179,9 +177,7 @@ def test_vendor_adapter_extends_artifacts_from_vendor_handler(tmp_path, mocker):
     vendor_module_dir = state.vendored_modules[0].path
     assert mock_run.call_args_list == [
         mocker.call(["go", "mod", "tidy"], cwd=vendor_module_dir, env={"GOWORK": "off"}),
-        mocker.call(
-            ["go", "mod", "vendor"], cwd=vendor_module_dir, env={"GOWORK": "off"}
-        ),
+        mocker.call(["go", "mod", "vendor"], cwd=vendor_module_dir, env={"GOWORK": "off"}),
     ]
     assert [(module.ecosystem, module.path) for module in state.vendored_modules] == [
         ("go", vendor_module_dir)
@@ -222,9 +218,7 @@ def test_vendor_adapter_syncs_only_go_module_metadata_back_to_source(tmp_path, m
     state = make_state(tmp_path / "work", artifacts=[artifact], source_dir=source_dir)
     state.source.attach_checkout(source_dir, artifact)
     spec = PipelineSpec(
-        transform=TransformSection(
-            steps=[VendorStep(ecosystem="go", sync_go_modules=True)]
-        )
+        transform=TransformSection(steps=[VendorStep(ecosystem="go", sync_go_modules=True)])
     )
 
     TransformStage().run(ctx, spec, state)
@@ -268,3 +262,64 @@ def test_syncs_source_dir_back_to_state_after_extraction(tmp_path, mocker):
 
     assert state.source.path is not None
     assert (state.source.path / "pkg" / "go.mod").exists()
+
+
+@pytest.mark.parametrize(
+    "ecosystem", ["go", "npm", "pnpm", "yarn", "cargo", "composer", "maven", "gradle"]
+)
+@pytest.mark.parametrize("change_metadata", [False, True])
+def test_vendor_adapters_publish_only_declared_changes(
+    tmp_path, mocker, ecosystem, change_metadata
+):
+    from gorget.transform.vendor import _ECOSYSTEMS
+
+    adapter = _ECOSYSTEMS[ecosystem]
+    declared = adapter.source_files(sync_go_modules=ecosystem == "go")
+    hashes = []
+    for index in range(2):
+        root = tmp_path / str(index)
+        source = root / "source"
+        source.mkdir(parents=True)
+        for filename in declared:
+            (source / filename).write_text("original")
+        (source / "unrelated.txt").write_text("original")
+        archive = root / "foo-1.2.3.tar.gz"
+        make_tar_gz(source, archive, arcname="foo-1.2.3", mtime=1700000000)
+        original = archive.read_bytes()
+        artifact = build_artifact(archive, archive.name, "repo", dry_run=False)
+
+        def vendor(module_dir, *_args, **_kwargs):
+            for filename in declared:
+                if change_metadata:
+                    (module_dir / filename).write_text("changed")
+            (module_dir / "unrelated.txt").write_text("scratch mutation")
+            cache = module_dir / "generated-cache"
+            cache.mkdir()
+            (cache / "dependency.txt").write_text("offline content")
+            return cache
+
+        mocker.patch.object(adapter, "vendor", side_effect=vendor)
+        mocker.patch.object(adapter, "archive_root_files", return_value=[])
+        mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
+        mocker.patch("gorget.pipeline.source.commit_timestamp", return_value=1700000000)
+        state = make_state(root / "work", artifacts=[artifact], source_dir=source)
+        state.source.attach_checkout(source, artifact)
+        step = VendorStep(
+            ecosystem=ecosystem, sync_go_modules=ecosystem == "go", offline_cache=False
+        )
+        TransformStage().run(
+            make_run_ctx(root), PipelineSpec(transform=TransformSection(steps=[step])), state
+        )
+        current = state.artifacts[0]
+        assert archive.read_bytes() == original
+        assert current.kind == ("derived" if declared and change_metadata else "input")
+        assert (source / "unrelated.txt").read_text() == "original"
+        assert not (source / "generated-cache").exists()
+        with tarfile.open(current.path) as tar:
+            assert not any("generated-cache" in name for name in tar.getnames())
+            for filename in declared:
+                assert tar.extractfile(f"foo-1.2.3/{filename}").read() == (
+                    b"changed" if change_metadata else b"original"
+                )
+        hashes.append([(entry.output_name, entry.checksum) for entry in state.artifacts])
+    assert hashes[0] == hashes[1]

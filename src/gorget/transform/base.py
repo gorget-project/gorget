@@ -1,12 +1,4 @@
-"""Shared context for transform step handlers.
-
-Unlike `fetch/base.py`'s `FetchStepHandler` (uniform `run(step, ctx) -> list[
-Artifact]`), transform handlers take the shared `run(step, ctx, state) ->
-None` shape and mutate `state` directly -- the primitives are genuinely
-heterogeneous (strip-tarball replaces an existing artifact, vendor-bump touches
-neither the artifact list nor produces one, run appends new artifacts),
-so forcing a single return-based contract would fit worse than it would help.
-"""
+"""Transform execution settings and access to the shared source workspace."""
 
 from __future__ import annotations
 
@@ -16,18 +8,23 @@ from typing import Protocol
 
 from gorget.config.schema import ToolchainEntry, TransformStep
 from gorget.config.substitution import SubstitutionVars
+from gorget.pipeline.source import SourceWorkspace
 from gorget.pipeline.state import StageState
-from gorget.util.archive import extract_tar_gz
 
 
 @dataclass(kw_only=True)
 class TransformContext:
     work_dir: Path
-    source_dir: Path | None
+    source: SourceWorkspace
     vars: SubstitutionVars
     toolchain: list[ToolchainEntry]
     dry_run: bool
     package_dir: Path
+
+    @property
+    def source_dir(self) -> Path | None:
+        """Read-only view for handlers that require a materialized source."""
+        return self.source.path
 
 
 class TransformStepHandler(Protocol):
@@ -35,29 +32,8 @@ class TransformStepHandler(Protocol):
 
 
 def ensure_source_dir(ctx: TransformContext, state: StageState, target: str | None = None) -> Path:
-    """Return the working source tree for steps that need one (vendor-bump,
-    vendor, run). Reuses the source workspace when one exists;
-    otherwise extracts the sole fetched artifact, since there's no other way to
-    guess which one to use if there's more than one (or none).
-
-    `target`, when given, names a specific fetched artifact to extract instead
-    -- required as soon as a pipeline fetches more than one artifact, since the
-    "exactly one" guess no longer applies. Extracted into its own target-keyed
-    scratch dir and returned directly, deliberately *not* cached into
-    `ctx.source_dir`, so an explicit `target` on one step can never leak into
-    a later step's implicit default.
-    """
-    if target is not None:
-        artifact = state.find_artifact(target)
-        extract_dir = ctx.work_dir / "_transform_source" / target
-        extract_tar_gz(artifact.path, extract_dir)
-        return extract_dir
-    if state.source.path is not None:
-        ctx.source_dir = state.source.path
-        return state.source.path
-    if ctx.source_dir is not None:
-        state.source.attach_tree(ctx.source_dir)
-        return ctx.source_dir
-    source_dir = state.source.materialize(ctx.work_dir, state.artifacts)
-    ctx.source_dir = source_dir
-    return source_dir
+    """Resolve source access through the workspace owner."""
+    if state.source.path is None and ctx.source.path is not None:
+        state.source = ctx.source
+    ctx.source = state.source
+    return state.source.select(ctx.work_dir, state.artifacts, target, detached=target is not None)

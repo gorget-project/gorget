@@ -34,7 +34,7 @@ def test_go_vendor_uses_go_work_vendor_in_workspace_mode(tmp_path, mocker):
     mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     result = GoVendor().vendor(tmp_path)
     assert mock_run.call_args_list == [
-        mocker.call(["go", "work", "vendor"], cwd=tmp_path, env=None)
+        mocker.call(["go", "work", "vendor"], cwd=tmp_path)
     ]
     assert result == tmp_path / "vendor"
 
@@ -52,9 +52,9 @@ def test_go_vendor_go_work_takes_priority_over_dependency_overrides_and_post_com
     mock_run = mocker.patch("gorget.transform.vendor.go.run", return_value=_ok())
     GoVendor().vendor(tmp_path, package_dir=package_dir)
     assert mock_run.call_args_list == [
-        mocker.call(["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path, env=None),
-        mocker.call(["go", "work", "vendor"], cwd=tmp_path, env=None),
-        mocker.call(["echo", "done"], cwd=tmp_path, env=None),
+        mocker.call(["go", "get", "golang.org/x/text@v0.39.0"], cwd=tmp_path),
+        mocker.call(["go", "work", "vendor"], cwd=tmp_path),
+        mocker.call(["echo", "done"], cwd=tmp_path),
     ]
 
 
