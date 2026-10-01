@@ -64,11 +64,15 @@ four explicitly -- there's no container providing them implicitly anymore.
 | `spec-update` | Bump `Version:`/reset `Release:`/apply declared substitutions, before Source URLs resolve |
 | `spec-source` | Download the spec's `Source0`/`SourceN` URLs (macro-resolved), by index or all |
 | `url` | Download an explicit URL not declared in the spec |
-| `git` | Clone a repo at a tag/branch/commit (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
+| `git` | Clone a repo at a tag/branch/commit/tree (optionally with recursive submodules via `submodules: shallow`/`full`; use `full` if the project pins submodules to non-tip commits), archive the checkout (or a subdir) |
 
 `vendor` runs package managers in a disposable copy of the source tree. Dependency
 trees, caches, and other package-manager changes cannot enter a later Source0 repack.
-The `sync-go-modules` option copies only Go module metadata back to the shared source.
+The `sync-go-modules` option copies Go module metadata back to Source0.
+Yarn vendoring also copies `yarn.lock` and `.yarnrc.yml` back to Source0, so its
+checksums and offline-cache settings match the generated vendor archive.
+
+Pinned Git trees without commit history use zero timestamps in their archives.
 
 `git` (or another real fetch step) is mandatory for a **native package** (no
 Fedora dist-git history, so no `Source0` tarball URL to fall back to) --
@@ -176,7 +180,7 @@ Runs after `fetch:`, in declared order, against what was already fetched.
 | Step | Purpose |
 |---|---|
 | `strip-tarball` | Derive a tarball with matching paths removed, preserving the acquired input |
-| `vendor-bump` | Bump a vendored dependency (direct **or** nested transitive) to a minimum or series-capped version (Go/npm/pnpm/yarn/Cargo/Maven), before a later `vendor` step re-vendors. Transitive deps are forced via the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm.overrides`, yarn `resolutions`, cargo `--precise`). Plain `version: "0.39.0"` means `>=0.39.0` (no upper bound); tilde `version: "~4.18.2"` means `>=4.18.2` capped to the `4.18.x` series |
+| `vendor-bump` | Bump a vendored dependency (direct **or** nested transitive) to a minimum or series-capped version (Go/npm/pnpm/yarn/Cargo/Maven), before a later `vendor` step re-vendors. Transitive deps are forced via the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm-workspace.yaml` overrides, yarn `resolutions`, cargo `--precise`). Plain `version: "0.39.0"` means `>=0.39.0` (no upper bound); tilde `version: "~4.18.2"` means `>=4.18.2` capped to the `4.18.x` series |
 | `vendor` | Generate a Go/npm/pnpm/yarn/Cargo/Composer/Maven/Gradle vendor archive from the source workspace |
 | `run` | Escape hatch: an arbitrary command, with declared output paths archived as new artifacts afterward |
 | `pack` | Archive an explicit list of files already in `--package-dir` into a single deterministic tarball, each at its own relative path |
@@ -185,13 +189,42 @@ For compatibility, gorget still accepts `vendor` entries under `fetch:` and
 moves them before the declared transform steps. This syntax is deprecated;
 new and updated pipelines should declare vendoring under `transform:`.
 
-`vendor-bump`/`vendor`/`run` all operate against a shared working
-source tree: a `git` fetch step's checkout if one ran, otherwise the sole
-fetched artifact gets extracted on first use (an error if there's more than
-one and no way to tell which to use) -- unless a `run:` step declares
-`target:`, naming exactly which fetched artifact to extract instead (needed
-as soon as a pipeline fetches more than one artifact, e.g. a tarball plus its
-detached checksums file).
+Transforms use a Git checkout when one is active. Otherwise, they extract the
+sole fetched source archive. A `vendor` step can select an archive by its output
+name through `source`, including when fetch also downloads signatures or keys:
+
+```yaml
+fetch:
+  - type: url
+    url: "https://example.org/project-${VERSION}.tar.gz"
+  - type: url
+    url: "https://example.org/project-${VERSION}.tar.gz.asc"
+transform:
+  - type: vendor
+    ecosystem: cargo
+    source: "project-${VERSION}.tar.gz"
+    modules:
+      - path: "project-${VERSION}"
+```
+
+Downloaded archives retain their internal layout. Their module paths include the
+archive's top-level directory. Git checkouts use paths relative to the checkout.
+A source switch rejects uncommitted workspace changes. A `run` step's `target`
+selects a detached archive extraction without changing the active source.
+
+Go bumps apply all pending pins before one `go mod tidy` per module. Bump checks
+use `GOWORK=off`, so workspace version selection cannot hide stale requirements
+in an individual module. Native bumps update Source0's module metadata; use
+`sync-go-modules` for metadata changes made by the later Go vendor step.
+
+Yarn uses Node to invoke a checked-in release when `.yarnrc.yml` declares
+`yarnPath`. Dependency bumps remove conflicting resolutions before setting a
+package-wide constraint. Berry lockfile updates keep transient install state
+outside Source0. Vendor cache generation disables dependency build scripts.
+
+Cargo uses its existing dependency requirements to resolve updates. An
+incompatible transitive requirement can prevent a requested version from
+replacing an older copy. Gorget rejects the remaining version violation.
 
 `run:`'s `outputs:` archives files/directories whose name is known upfront.
 For a name only known once the command runs (e.g. a version string it
@@ -369,7 +402,7 @@ policy:
 
 | Check | Behavior |
 |---|---|
-| `vendor-constraints` | Resolves the actual vendored version (`go list -m`, `node_modules/<pkg>/package.json`, `Cargo.lock`) and compares against the declared minimum. Checks every vendored module for that ecosystem automatically -- no per-entry module path needed. Fails closed. |
+| `vendor-constraints` | Reads resolved versions from Go module queries, JavaScript lockfiles, Cargo.lock, or Maven dependency queries. For npm, pnpm, Yarn, and Cargo, the lowest locked version must meet the declared minimum; a newer copy cannot hide an older copy. Checks every vendored module for that ecosystem automatically -- no per-entry module path needed. Fails closed. |
 | `audit` | `go mod verify` checks module cache checksums against `go.sum` -- deterministic, no network, **fails closed**. `npm audit`, `cargo audit`, and Maven's OWASP dependency-check query live vulnerability databases over the network -- non-deterministic (results can change with no code change), so findings are recorded in `report.json` but are **warn-only, never fail closed**. `cargo-audit` must be separately installed on `PATH`. |
 | `license-compliance` | Flags a vendored dependency whose declared license is in `disallowed`. Supported for npm (`package.json`'s `license` field) and Cargo (`Cargo.toml`'s `license` field) only -- Go has no standard machine-readable per-module license field, so Go modules get a single "unsupported" warning instead of a fabricated check. |
 
@@ -441,8 +474,9 @@ The file is written into `--package-dir`; pull it into the spec with:
 %include %{SOURCEN}    # e.g. %include %{S:9}, matching its SourceN: entry
 ```
 
-Requires a preceding `git` fetch step to establish the source checkout; it
-fails closed otherwise.
+Requires a materialized source workspace from a Git fetch or an archive-based
+transform. For Berry, production scope follows workspace and transitive production
+dependencies. Classic Yarn includes all locked dependencies in both scopes.
 
 ### `toolchain:`
 

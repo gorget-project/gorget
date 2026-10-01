@@ -304,3 +304,63 @@ def test_parse_bundled_provides_missing_lockfile(tmp_path):
     result = parse_bundled_provides("npm", tmp_path, modules)
     assert result["production"] == []
     assert result["all"] == []
+
+
+def test_berry_provides_traverse_production_graph_with_resolution(tmp_path):
+    import json
+
+    from gorget.transform.vendor.lockfile import yarn_provides
+
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "dependencies": {"foo": "^1"},
+                "devDependencies": {"dev": "^1"},
+                "resolutions": {"foo": ">=2"},
+            }
+        )
+    )
+    lockfile = tmp_path / "yarn.lock"
+    lockfile.write_text("""__metadata:
+  version: 8
+"foo@npm:>=2":
+  version: 2.0.0
+  resolution: "foo@npm:2.0.0"
+  dependencies:
+    child: "npm:^1"
+"child@npm:^1":
+  version: 1.0.0
+  resolution: "child@npm:1.0.0"
+"dev@npm:^1":
+  version: 1.0.0
+  resolution: "dev@npm:1.0.0"
+""")
+    production, all_deps = yarn_provides(lockfile)
+    assert production == {("foo", "2.0.0"), ("child", "1.0.0")}
+    assert all_deps == production | {("dev", "1.0.0")}
+
+
+def test_berry_resolutions_match_normalized_npm_references_and_workspaces(tmp_path):
+    import json
+
+    from gorget.transform.vendor.lockfile import yarn_provides
+
+    (tmp_path / "package.json").write_text(json.dumps({
+        "dependencies": {"foo": "npm:^1", "local": "npm:^1"},
+        "workspaces": ["packages/*"],
+        "resolutions": {"foo@^1": "patch:foo@npm%3A1.0.0#patch", "local": "workspace:*"}}))
+    member = tmp_path / "packages/local"
+    member.mkdir(parents=True)
+    (member / "package.json").write_text('{"name":"local", "dependencies":{"child":"^1"}}')
+    lockfile = tmp_path / "yarn.lock"
+    lockfile.write_text('''__metadata:
+  version: 8
+"foo@patch:foo@npm%3A1.0.0#patch::locator=root":
+  version: 1.0.0
+  resolution: "foo@patch:foo@npm%3A1.0.0#patch::hash=abc"
+"child@npm:^1":
+  version: 1.0.0
+  resolution: "child@npm:1.0.0"
+''')
+    production, _ = yarn_provides(lockfile)
+    assert production == {("foo", "1.0.0"), ("child", "1.0.0")}

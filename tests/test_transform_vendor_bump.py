@@ -494,3 +494,86 @@ def test_toolchain_param_does_not_change_command(tmp_path, mocker):
     entry = VendorBumpEntry(dependency="golang.org/x/net", version="0.23.0")
     _GoPin().apply(tmp_path, entry, [ToolchainEntry(name="go", version="1.22.0")])
     assert mock_run.call_args_list[0].args[0][:3] == ["go", "mod", "edit"]
+
+
+def test_go_pins_are_applied_before_one_tidy(tmp_path, mocker):
+    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    pins = [
+        VendorBumpEntry(dependency="example.org/a", version="v1.2.0"),
+        VendorBumpEntry(dependency="example.org/b", version="v1.3.0"),
+    ]
+    _GoPin().apply_many(tmp_path, pins, [])
+    assert mock_run.call_args_list[0].args[0] == [
+        "go",
+        "mod",
+        "edit",
+        "-require=example.org/a@v1.2.0",
+        "-require=example.org/b@v1.3.0",
+    ]
+    assert mock_run.call_args_list[1].args[0] == ["go", "mod", "tidy"]
+    assert mock_run.call_count == 2
+
+
+def test_yarn_global_pin_removes_older_parent_and_descriptor_resolutions(tmp_path, mocker):
+    manifest = tmp_path / "package.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "packageManager": "yarn@4.0.0",
+                "resolutions": {"foo@npm:^1": "1.0.0", "parent/foo": "1.0.0", "other": "2.0.0"},
+            }
+        )
+    )
+    mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    _YARN.apply(tmp_path, VendorBumpEntry(dependency="foo", version="2.0.0"), [])
+    assert json.loads(manifest.read_text())["resolutions"] == {"foo": ">=2.0.0", "other": "2.0.0"}
+
+
+def test_go_workspace_member_is_checked_without_workspace_mvs(tmp_path, mocker):
+    source = tmp_path / "src"
+    member = source / "apps/member"
+    member.mkdir(parents=True)
+    calls = []
+    updated = False
+
+    def fake_run(args, cwd=None, env=None):
+        nonlocal updated
+        calls.append((args, cwd, env))
+        if args[:3] == ["go", "list", "-m"]:
+            version = "v2.0.0" if updated else "v1.0.0"
+            return subprocess.CompletedProcess(args, 0, "example.org/a " + version, "")
+        if args[:3] == ["go", "mod", "tidy"]:
+            updated = True
+        return _ok()
+
+    mocker.patch("gorget.transform.vendor_bump.run", side_effect=fake_run)
+    step = VendorBumpStep(
+        ecosystem="go",
+        modules=[VendorModule(path="apps/member")],
+        pins=[VendorBumpEntry(dependency="example.org/a", version="v2.0.0")],
+    )
+    state = make_state(tmp_path)
+    VendorBumpHandler().run(step, make_ctx(tmp_path, source), state)
+    queries = [call for call in calls if call[0][:3] == ["go", "list", "-m"]]
+    assert len(queries) == 2
+    assert all(cwd == member and env == {"GOWORK": "off"} for _, cwd, env in queries)
+    assert any(args[:3] == ["go", "mod", "edit"] for args, _, _ in calls)
+
+
+def test_yarn_bump_keeps_install_state_outside_source(tmp_path, mocker):
+    from pathlib import Path
+
+    (tmp_path / "package.json").write_text('{"packageManager":"yarn@4.0.0"}')
+    state_paths = []
+
+    def install(args, cwd=None, env=None):
+        state_path = Path(env["YARN_INSTALL_STATE_PATH"])
+        assert not state_path.is_relative_to(tmp_path)
+        state_path.write_bytes(b"absolute cache paths and generated state")
+        state_paths.append(state_path)
+        return _ok()
+
+    mocker.patch("gorget.transform.vendor_bump.run", side_effect=install)
+    _YARN.apply(tmp_path, VendorBumpEntry(dependency="foo", version="2.0.0"), [])
+    assert not state_paths[0].exists()
+    assert not (tmp_path / ".yarn/install-state.gz").exists()

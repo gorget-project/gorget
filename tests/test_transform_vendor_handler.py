@@ -413,3 +413,37 @@ def test_vendor_threads_gradle_task_to_ecosystem(tmp_path, mocker):
     mock_vendor.assert_called_once_with(
         result.modules[0].path, [], tmp_path, True, (), task=task
     )
+
+
+def test_yarn_vendor_syncs_lock_and_config_but_keeps_cache_separate(tmp_path, mocker):
+    mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
+    source_dir = tmp_path / "src"
+    source_dir.mkdir()
+    (source_dir / "yarn.lock").write_text("original")
+    (source_dir / ".yarnrc.yml").write_text("original")
+
+    def fake_vendor(module_dir, *_args, **_kwargs):
+        (module_dir / "yarn.lock").write_text("new checksums")
+        (module_dir / ".yarnrc.yml").write_text("compressionLevel: 0")
+        cache = module_dir / ".yarn/cache"
+        cache.mkdir(parents=True)
+        (cache / "foo.zip").write_text("cache")
+        return cache
+
+    mocker.patch(
+        "gorget.transform.vendor._ECOSYSTEMS",
+        {
+            "yarn": Mock(
+                vendor=Mock(side_effect=fake_vendor), archive_root_files=Mock(return_value=[])
+            )
+        },
+    )
+    result = VendorHandler().run(
+        VendorStep(ecosystem="yarn"), make_ctx(tmp_path, source_dir=source_dir)
+    )
+    assert result.source_changed
+    assert (source_dir / "yarn.lock").read_text() == "new checksums"
+    assert (source_dir / ".yarnrc.yml").read_text() == "compressionLevel: 0"
+    assert not (source_dir / ".yarn/cache").exists()
+    with tarfile.open(result.artifacts[0].path) as archive:
+        assert "vendor/foo.zip" in archive.getnames()

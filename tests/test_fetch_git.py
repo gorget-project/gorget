@@ -361,3 +361,24 @@ def test_submodule_update_failure_raises_transient_error(tmp_path, mocker):
     )
     with pytest.raises(GorgetTransientError, match="submodule fetch failed"):
         GitHandler().run(step, make_ctx(tmp_path))
+
+
+def test_pinned_tree_without_commit_history_is_reproducible(tmp_path):
+    repo = tmp_path / "upstream"
+    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+    (repo / "keys.asc").write_text("public signing keys\n")
+    subprocess.run(["git", "add", "keys.asc"], cwd=repo, check=True)
+    tree = subprocess.run(
+        ["git", "write-tree"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    step = GitStep(repo=str(repo), ref=tree, archive_name="keys.tar.gz")
+    outputs = []
+    for name in ("first", "second"):
+        work = tmp_path / name
+        work.mkdir()
+        artifact = GitHandler().run(step, make_ctx(work))[0]
+        outputs.append(artifact.path.read_bytes())
+        with tarfile.open(artifact.path) as tar:
+            assert tar.extractfile("keys/keys.asc").read() == b"public signing keys\n"
+            assert all(member.mtime == 0 for member in tar.getmembers())
+    assert outputs[0] == outputs[1]

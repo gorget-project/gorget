@@ -10,6 +10,8 @@ import subprocess
 import tarfile
 from pathlib import Path
 
+import pytest
+
 from gorget.cli import resolve_pipeline_spec
 from gorget.context import build_run_context
 from gorget.pipeline.runner import PipelineRunner
@@ -123,3 +125,81 @@ def test_git_fetch_then_vendor_bump_then_vendor(tmp_path, mocker):
 
     report_json = json.loads((output_dir / "report.json").read_text())
     assert {a["output_name"] for a in report_json["artifacts"]} == output_names
+
+
+@pytest.mark.parametrize("auxiliary", [None, "url", "git"])
+def test_url_archive_can_be_vendored_without_a_git_checkout(tmp_path, mocker, auxiliary):
+    """Downloaded source archives retain their layout and remain immutable."""
+    from gorget.util.archive import make_tar_gz
+
+    source = tmp_path / "upstream"
+    source.mkdir()
+    (source / "Cargo.toml").write_text('[package]\nname = "foo"\nversion = "1.2.3"\n')
+    (source / "Cargo.lock").write_text("upstream lockfile\n")
+    archive = tmp_path / "upstream.tar.gz"
+    make_tar_gz(source, archive, arcname="foo-1.2.3", mtime=1700000000)
+    original = archive.read_bytes()
+    pipeline = """fetch:
+  - type: url
+    url: https://example.com/foo-1.2.3.tar.gz
+transform:
+  - type: vendor
+    ecosystem: cargo
+    archive_name: foo-vendor.tar.gz
+    modules:
+      - path: foo-1.2.3
+"""
+    if auxiliary:
+        extra = (
+            "  - type: url\n    url: https://example.com/keys.asc\n"
+            if auxiliary == "url"
+            else "  - type: git\n    repo: https://example.com/keys\n    ref: main\n"
+        )
+        pipeline = pipeline.replace("transform:", extra + "transform:").replace(
+            "    ecosystem: cargo", "    ecosystem: cargo\n    source: foo-1.2.3.tar.gz"
+        )
+        if auxiliary == "git":
+            from gorget.pipeline.artifact import build_input_artifact
+
+            def fetch_keys(step, fetch_ctx):
+                keys = fetch_ctx.work_dir / "keys"
+                keys.mkdir()
+                (keys / "keys.asc").write_text("public keys")
+                dest = fetch_ctx.work_dir / "keys.tar.gz"
+                make_tar_gz(keys, dest, arcname="keys", mtime=1700000000)
+                fetch_ctx.source_dir = keys
+                return [build_input_artifact(dest, dest.name, "keys", False)]
+
+            mocker.patch("gorget.fetch.git.GitHandler.run", side_effect=fetch_keys)
+    ctx = make_ctx(tmp_path, pipeline)
+    mocker.patch(
+        "gorget.fetch.url.download_to", side_effect=lambda url, dest: dest.write_bytes(original)
+    )
+
+    def vendor(module_dir, *args, **kwargs):
+        assert (module_dir / "Cargo.lock").read_text() == "upstream lockfile\n"
+        (module_dir / "Cargo.lock").write_text("isolated change\n")
+        result = module_dir / "vendor"
+        result.mkdir()
+        (result / "dependency.txt").write_text("vendored dependency\n")
+        return result
+
+    mocker.patch("gorget.transform.vendor.cargo.CargoVendor.vendor", side_effect=vendor)
+    report = PipelineRunner(ctx, resolve_pipeline_spec(ctx)).run()
+    assert all(stage.status in {"success", "skipped"} for stage in report.stages)
+    assert (ctx.output_dir / "foo-1.2.3.tar.gz").read_bytes() == original
+    with tarfile.open(ctx.output_dir / "foo-vendor.tar.gz") as tar:
+        assert tar.extractfile("vendor/dependency.txt").read() == b"vendored dependency\n"
+
+
+def test_vendor_source_switch_rejects_uncommitted_source_changes(tmp_path, mocker):
+    from gorget.config.schema import VendorStep
+    from gorget.exceptions import GorgetConfigError
+    from gorget.pipeline.stages.transform import _VendorStepAdapter
+
+    ctx = mocker.Mock(dry_run=False)
+    state = mocker.Mock()
+    state.source.path = tmp_path
+    state.source.dirty = True
+    with pytest.raises(GorgetConfigError, match="uncommitted changes"):
+        _VendorStepAdapter().run(VendorStep(ecosystem="cargo", source="source.tar.gz"), ctx, state)

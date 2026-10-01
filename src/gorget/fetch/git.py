@@ -64,12 +64,12 @@ class GitHandler:
 
         if not ctx.dry_run:
             clone_dir = ctx.work_dir / "_git" / _slug(step.repo)
-            self._clone(step, clone_dir)
+            exported_tree = self._clone(step, clone_dir)
             if step.submodules != "none":
                 self._init_submodules(clone_dir, shallow=step.submodules == "shallow")
             ctx.source_dir = clone_dir
             src = (clone_dir / step.subdir) if step.subdir else clone_dir
-            mtime = commit_timestamp(clone_dir)
+            mtime = 0 if exported_tree else commit_timestamp(clone_dir)
             # The archive's internal directory is what %setup/%autosetup
             # extracts into, so it must match the archive's own filename, not
             # `ctx.vars.package` (the spec's filename stem, which can legally
@@ -91,7 +91,7 @@ class GitHandler:
             )
         ]
 
-    def _clone(self, step: GitStep, dest: Path) -> None:
+    def _clone(self, step: GitStep, dest: Path) -> bool:
         if step.shallow and not _looks_like_sha(step.ref):
             result = self._run_git(
                 [
@@ -104,7 +104,7 @@ class GitHandler:
                 f"git clone --branch {step.ref} failed for {step.repo}",
             )
             self._note_benign_annotated_tag_warning(result, step.ref)
-            return
+            return False
 
         if step.shallow and _looks_like_sha(step.ref):
             # Previously: `git clone --filter=blob:none` then `git checkout
@@ -132,16 +132,28 @@ class GitHandler:
                 f"git fetch {step.ref} failed for {step.repo}",
                 cwd=dest,
             )
-            self._run_git(
-                ["git", "checkout", "--quiet", "FETCH_HEAD"],
-                f"git checkout {step.ref} failed",
-                cwd=dest,
-            )
-            return
+            checkout = run(["git", "checkout", "--quiet", "FETCH_HEAD"], cwd=dest)
+            if checkout.returncode != 0:
+                kind = run(["git", "cat-file", "-t", "FETCH_HEAD"], cwd=dest)
+                if kind.returncode != 0 or kind.stdout.strip() != "tree":
+                    raise GorgetTransientError(
+                        f"git checkout {step.ref} failed: {checkout.stderr.strip()}"
+                    )
+                # Signing keys can be published as a tagged tree with no
+                # commit history. Export it without inventing a timestamp.
+                self._run_git(
+                    ["git", "read-tree", "FETCH_HEAD"], "git read-tree failed", cwd=dest
+                )
+                self._run_git(
+                    ["git", "checkout-index", "--all"], "git checkout-index failed", cwd=dest
+                )
+                return True
+            return False
 
         clone_args = ["git", "clone", step.repo, str(dest)]
         self._run_git(clone_args, f"git clone failed for {step.repo}")
         self._run_git(["git", "checkout", step.ref], f"git checkout {step.ref} failed", cwd=dest)
+        return False
 
     def _note_benign_annotated_tag_warning(
         self, result: subprocess.CompletedProcess, ref: str

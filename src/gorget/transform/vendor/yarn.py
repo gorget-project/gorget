@@ -26,6 +26,19 @@ _BERRY_CACHE_REL = ".yarn/cache"
 _PACKAGE_MANAGER_RE = re.compile(r"^yarn@(\d+)")
 
 
+def yarn_command(module_dir: Path, args: Sequence[str]) -> list[str]:
+    """Use the project's checked-in Yarn without a global Yarn install."""
+    yarnrc = module_dir / ".yarnrc.yml"
+    config = yaml.safe_load(yarnrc.read_text()) if yarnrc.is_file() else {}
+    yarn_path = (config or {}).get("yarnPath")
+    if yarn_path:
+        binary = module_dir / yarn_path
+        if not binary.is_file():
+            raise GorgetTransientError(f"Configured Yarn release does not exist: {binary}")
+        return ["node", str(binary), *args]
+    return ["yarn", *args]
+
+
 class YarnVendor:
     def vendor(
         self,
@@ -51,9 +64,11 @@ class YarnVendor:
             #         the lockfile matches compressionLevel 0.
             for cmd in (
                 ["yarn", "install", "--mode", "update-lockfile"],
-                ["yarn", "install", "--immutable"],
+                ["yarn", "install", "--immutable", "--mode", "skip-build"],
             ):
-                result = run(wrap_command(cmd, toolchain), cwd=module_dir)
+                result = run(
+                    wrap_command(yarn_command(module_dir, cmd[1:]), toolchain), cwd=module_dir
+                )
                 if result.returncode != 0:
                     raise GorgetTransientError(
                         f"yarn install failed in {module_dir}: {result.stderr.strip()}"
@@ -61,12 +76,14 @@ class YarnVendor:
         else:
             cache_dir.mkdir(parents=True, exist_ok=True)
             cmd = [
-                "yarn", "install",
+                "yarn",
+                "install",
                 "--frozen-lockfile",
                 "--ignore-scripts",
-                "--cache-folder", str(cache_dir),
+                "--cache-folder",
+                str(cache_dir),
             ]
-            result = run(wrap_command(cmd, toolchain), cwd=module_dir)
+            result = run(wrap_command(yarn_command(module_dir, cmd[1:]), toolchain), cwd=module_dir)
             if result.returncode != 0:
                 raise GorgetTransientError(
                     f"yarn install failed in {module_dir}: {result.stderr.strip()}"

@@ -24,10 +24,12 @@ def test_yarn_vendor_runs_install_with_cache_folder(tmp_path, mocker):
     assert mock_run.call_args_list == [
         mocker.call(
             [
-                "yarn", "install",
+                "yarn",
+                "install",
                 "--frozen-lockfile",
                 "--ignore-scripts",
-                "--cache-folder", str(cache_dir),
+                "--cache-folder",
+                str(cache_dir),
             ],
             cwd=tmp_path,
         ),
@@ -109,7 +111,7 @@ def test_yarn_berry_two_step_install(tmp_path, mocker):
     step1 = mock_run.call_args_list[0].args[0]
     step2 = mock_run.call_args_list[1].args[0]
     assert step1 == ["yarn", "install", "--mode", "update-lockfile"]
-    assert step2 == ["yarn", "install", "--immutable"]
+    assert step2 == ["yarn", "install", "--immutable", "--mode", "skip-build"]
     # No v1-only flags in either call.
     for cmd in (step1, step2):
         assert "--frozen-lockfile" not in cmd
@@ -133,11 +135,27 @@ def test_yarn_berry_writes_offline_cache_config(tmp_path, mocker):
 
 def test_yarn_berry_detected_via_yarnrc_yarnpath(tmp_path, mocker):
     (tmp_path / ".yarnrc.yml").write_text("yarnPath: .yarn/releases/yarn-4.15.0.cjs\n")
+    release = tmp_path / ".yarn/releases/yarn-4.15.0.cjs"
+    release.parent.mkdir(parents=True)
+    release.write_text("// fixture")
     mock_run = mocker.patch("gorget.transform.vendor.yarn.run", return_value=_ok())
     YarnVendor().vendor(tmp_path)
     assert mock_run.call_count == 2
-    assert mock_run.call_args_list[0].args[0] == ["yarn", "install", "--mode", "update-lockfile"]
-    assert mock_run.call_args_list[1].args[0] == ["yarn", "install", "--immutable"]
+    assert mock_run.call_args_list[0].args[0] == [
+        "node",
+        str(release),
+        "install",
+        "--mode",
+        "update-lockfile",
+    ]
+    assert mock_run.call_args_list[1].args[0] == [
+        "node",
+        str(release),
+        "install",
+        "--immutable",
+        "--mode",
+        "skip-build",
+    ]
     # Existing yarnPath is preserved, offline-cache config merged in.
     data = yaml.safe_load((tmp_path / ".yarnrc.yml").read_text())
     assert data["yarnPath"] == ".yarn/releases/yarn-4.15.0.cjs"
@@ -150,7 +168,13 @@ def test_yarn_berry_detected_via_releases_dir(tmp_path, mocker):
     YarnVendor().vendor(tmp_path)
     assert mock_run.call_count == 2
     assert mock_run.call_args_list[0].args[0] == ["yarn", "install", "--mode", "update-lockfile"]
-    assert mock_run.call_args_list[1].args[0] == ["yarn", "install", "--immutable"]
+    assert mock_run.call_args_list[1].args[0] == [
+        "yarn",
+        "install",
+        "--immutable",
+        "--mode",
+        "skip-build",
+    ]
 
 
 def test_yarn_berry_fails_on_update_lockfile_skips_immutable(tmp_path, mocker):

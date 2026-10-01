@@ -96,6 +96,9 @@ class VendorStep:
     task: str = "build"
     archive_name: str | None = None
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
+    # Select a downloaded source archive when fetch also acquires signatures
+    # or other auxiliary artifacts. Module paths retain the archive's layout.
+    source: str | None = None
     platforms: list[VendorPlatform] | None = None
     # Go-only, transform-stage option. Run vendoring in an isolated copy of
     # the source tree, then synchronize the resulting module metadata back to

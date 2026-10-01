@@ -12,7 +12,7 @@ they run at different times for different reasons.
 | | `transform: vendor-bump` | `policy: vendor-constraints` |
 |---|---|---|
 | Runs | Once, before the `vendor` step re-vendors | Every run, after everything's fetched |
-| Does | Edits the dependency manifest/lockfile (`go.mod`, `package.json`, `Cargo.toml`) to require at least the given version -- for a **nested transitive** dependency it uses the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm.overrides`, yarn `resolutions`, cargo `--precise`) so every copy is forced, not just a direct edge | Reads back the *actually vendored* version and compares it against the declared minimum |
+| Does | Edits the dependency manifest/lockfile (`go.mod`, `package.json`, `Cargo.toml`) to require at least the given version -- for a **nested transitive** dependency it uses the ecosystem's override mechanism (npm `overrides`, pnpm `pnpm-workspace.yaml` overrides, yarn `resolutions`, cargo `--precise`) to update transitive copies; incompatible Cargo requirements can prevent an update | Reads back the *actually vendored* version and compares it against the declared minimum |
 | Answers | "Bump this dependency before vendoring" | "Did the bump actually take, and does it still hold on every future run?" |
 
 `vendor-bump` alone fixes this release. Nothing stops a later upstream update
@@ -57,21 +57,20 @@ pins:
 See [`go-pipeline-demo`](../../examples/go-pipeline-demo/) for this running
 against a real `go.mod`.
 
-**For the `go` ecosystem, you normally also need a spec patch.** `fetch: {git}`
-archives `Source0` from the checkout *before* `vendor-bump` edits `go.mod` in
-that same checkout -- the edit only ever reaches the vendor archive, never
-the plain source tarball. Without a spec patch replicating the same
-`go.mod`/`go.sum` change onto the actual build tree, the build tree and the
-vendor archive end up requiring different versions of the same dependency,
-which `go build -mod=vendor` rejects as inconsistent vendoring. gorget
-checks for this and fails closed (`GorgetConfigError`) before `vendor-bump`
-mutates anything if no declared spec patch touches `go.mod`/`go.sum` --
-compute that patch offline the same way you would for a CVE backport
-(`go mod edit`/`go mod tidy` against a pristine clone), since Konflux builds
-are hermetic and `%prep` can't re-run those commands itself. This is exactly
-what broke `trivy` for real, via the equivalent `go-vendor-tools.toml`
-`pre_commands` mechanism -- see `gorget/transform/vendor/gomod_patch_sync.py`'s
-module docstring for the full mechanism, which is identical for both.
+Native Go bumps update `go.mod` and `go.sum` in the source workspace. Gorget
+repacks Source0 after the transform stage, so the build tree receives those edits
+without a separate spec patch. It applies all pending Go pins before one tidy
+and checks each module with `GOWORK=off`.
+
+Yarn bumps use package-wide resolutions and remove conflicting narrower
+selectors. If the project declares `yarnPath`, Node invokes that checked-in
+release. A later Yarn vendor step copies the generated lockfile and offline-cache
+settings into Source0. Generated caches remain in the vendor archive.
+
+Minimum-version checks include older transitive copies. A newer copy does not
+make a vulnerable older copy acceptable. Cargo can reject a requested update if
+transitive requirements conflict with it. Review application compatibility when
+a package-wide constraint crosses a dependency major version.
 
 When a package uses `go-vendor-tools.toml` dependency overrides, it can instead
 synchronize the generated module metadata into `Source0` itself:
@@ -133,9 +132,11 @@ regression this is designed to catch.
 gorget --version <current-version> \
   --package-dir /path/to/your/package \
   --pipeline-file /path/to/your/package/pipeline.yaml \
-  --output-dir /tmp/gorget-output \
-  --dry-run
+  --output-dir /tmp/gorget-output
 ```
+
+Run without `--dry-run` to execute updates and policy checks. A dry run only
+plans the pipeline.
 
 Check `report.json`'s `transform` stage for the pin taking effect, and
 `policy` stage's `vendor-constraints` check for a `"status": "passed"`

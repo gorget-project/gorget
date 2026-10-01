@@ -47,9 +47,7 @@ class VendorHandler:
         archive_path = derived_artifact_path(ctx.work_dir, "vendor", archive_name)
 
         use_offline_cache = (
-            step.ecosystem == "pnpm"
-            if step.offline_cache is None
-            else step.offline_cache
+            step.ecosystem == "pnpm" if step.offline_cache is None else step.offline_cache
         )
         if use_offline_cache:
             if step.ecosystem != "pnpm":
@@ -98,9 +96,7 @@ class VendorHandler:
                     "pipeline to establish a source checkout to vendor against"
                 )
             if step.sync_go_modules and step.ecosystem != "go":
-                raise GorgetConfigError(
-                    "sync-go-modules is only supported for ecosystem: go"
-                )
+                raise GorgetConfigError("sync-go-modules is only supported for ecosystem: go")
 
             source_dir = ctx.source_dir
             ctx.work_dir.mkdir(parents=True, exist_ok=True)
@@ -132,6 +128,12 @@ class VendorHandler:
                     module_outputs.append((module, output))
                 if step.sync_go_modules:
                     self._sync_go_module_files(source_dir, vendor_source_dir, step)
+                if step.ecosystem == "yarn":
+                    for module in step.modules:
+                        for filename in ("yarn.lock", ".yarnrc.yml"):
+                            generated = vendor_source_dir / module.path / filename
+                            if generated.is_file():
+                                shutil.copyfile(generated, source_dir / module.path / filename)
                 mtime = commit_timestamp(source_dir)
                 root_files = (
                     ecosystem.archive_root_files(module_outputs[0][1].parent)
@@ -157,7 +159,11 @@ class VendorHandler:
             if vendor_source_dir is not None
             else ()
         )
-        return VendorResult(artifacts=(artifact,), modules=modules)
+        return VendorResult(
+            artifacts=(artifact,),
+            modules=modules,
+            source_changed=step.sync_go_modules or step.ecosystem == "yarn",
+        )
 
     @staticmethod
     def _vendor_module(
@@ -193,9 +199,7 @@ class VendorHandler:
         return ecosystem.vendor(module_dir, toolchain, package_dir, use_workspace, platforms)
 
     @staticmethod
-    def _sync_go_module_files(
-        source_dir: Path, vendor_source_dir: Path, step: VendorStep
-    ) -> None:
+    def _sync_go_module_files(source_dir: Path, vendor_source_dir: Path, step: VendorStep) -> None:
         """Copy module metadata, but never the generated vendor tree, to Source0."""
         for module in step.modules:
             source_module = source_dir / module.path
