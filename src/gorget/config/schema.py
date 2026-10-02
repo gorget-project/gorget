@@ -102,6 +102,7 @@ class VendorStep:
     ]
     # Gradle-specific task. Other ecosystems ignore this value.
     task: str = "build"
+    max_workers: int | None = None
     outputs: list[VendorOutput] = field(default_factory=list)
     archive_name: str | None = None
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])

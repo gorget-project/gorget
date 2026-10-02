@@ -70,7 +70,7 @@ def test_vendor_output_dry_run_plans_without_building(tmp_path, mocker):
 @pytest.mark.parametrize("path,name", [
     ("../output", "runtime.tgz"), ("/tmp/output", "runtime.tgz"),
     ("", "runtime.tgz"), ("build/*.tgz", "../runtime.tgz"),
-    ("build/*.tgz", "foo-vendor.tar.gz"),
+    ("build/*.tgz", "foo-vendor.tar.gz"), (123, "runtime.tgz"), ("build/*.tgz", None),
 ])
 def test_vendor_output_rejects_invalid_paths_and_names(tmp_path, path, name):
     with pytest.raises(GorgetConfigError):
@@ -170,3 +170,25 @@ def test_retained_output_reaches_post_without_publication(tmp_path, mocker):
     assert (ctx.output_dir / "foo-vendor.tar.gz").is_file()
     assert "runtime.tgz" not in (ctx.output_dir / "sources").read_text()
     assert not (source / "build").exists()
+
+
+def test_vendor_worker_limit_parses():
+    spec = parse_pipeline_spec({"transform": [{
+        "type": "vendor", "ecosystem": "gradle", "max-workers": 1,
+    }]})
+    assert spec.transform.steps[0].max_workers == 1
+
+
+def test_vendor_worker_limit_requires_gradle(tmp_path):
+    with pytest.raises(GorgetConfigError, match="only supported.*gradle"):
+        VendorHandler().run(
+            VendorStep(ecosystem="go", max_workers=1), make_ctx(tmp_path, dry_run=True)
+        )
+
+
+@pytest.mark.parametrize("workers", [0, -1, True, "2", 1.5])
+def test_vendor_worker_limit_validates_dry_runs(tmp_path, workers):
+    with pytest.raises(GorgetConfigError, match="positive integer"):
+        VendorHandler().run(
+            VendorStep(ecosystem="gradle", max_workers=workers), make_ctx(tmp_path, dry_run=True)
+        )

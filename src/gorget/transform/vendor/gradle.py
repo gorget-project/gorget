@@ -24,6 +24,7 @@ class GradleVendor:
         use_workspace: bool = True,
         platforms: Sequence[VendorPlatform] = (),
         task: str = "build",
+        max_workers: int | None = None,
     ) -> Path:
         if not _has_gradle_build_file(module_dir):
             raise GorgetConfigError(
@@ -33,9 +34,13 @@ class GradleVendor:
         if not task:
             raise GorgetConfigError("gradle vendor: task must not be empty")
 
+        validate_max_workers(max_workers)
         vendor_dir = module_dir / "vendor"
         gradle = "./gradlew" if (module_dir / "gradlew").is_file() else "gradle"
-        cmd = [gradle, "--no-daemon", task]
+        cmd = [gradle, "--no-daemon"]
+        if max_workers is not None:
+            cmd.append(f"--max-workers={max_workers}")
+        cmd.append(task)
         result = PackageManager(module_dir, toolchain, runner=run).run(
             cmd,
             env={"GRADLE_USER_HOME": str(vendor_dir)},
@@ -66,3 +71,8 @@ def _remove_transient_cache_files(vendor_dir: Path) -> None:
     for path in vendor_dir.rglob("*"):
         if path.is_file() and (path.suffix == ".lock" or path.name == "gc.properties"):
             path.unlink()
+
+
+def validate_max_workers(value: int | None) -> None:
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+        raise GorgetConfigError("gradle max-workers must be a positive integer")

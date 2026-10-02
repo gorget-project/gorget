@@ -409,7 +409,8 @@ def test_vendor_threads_use_workspace_false_to_ecosystem(tmp_path, mocker):
     mock_vendor.assert_called_once_with(result.modules[0].path, [], tmp_path, False, ())
 
 
-def test_vendor_threads_gradle_task_to_ecosystem(tmp_path, mocker):
+@pytest.mark.parametrize("max_workers", [None, 1])
+def test_vendor_threads_gradle_task_to_ecosystem(tmp_path, mocker, max_workers):
     mocker.patch("gorget.transform.vendor.commit_timestamp", return_value=1700000000)
     source_dir = tmp_path / "src"
     source_dir.mkdir()
@@ -432,11 +433,13 @@ def test_vendor_threads_gradle_task_to_ecosystem(tmp_path, mocker):
         },
     )
     task = ":distributions-full:binDistributionZip"
-    step = VendorStep(ecosystem="gradle", task=task)
+    step = VendorStep(ecosystem="gradle", task=task, max_workers=max_workers)
 
     result = VendorHandler().run(step, make_ctx(tmp_path, source_dir=source_dir))
 
-    mock_vendor.assert_called_once_with(result.modules[0].path, [], tmp_path, True, (), task=task)
+    mock_vendor.assert_called_once_with(
+        result.modules[0].path, [], tmp_path, True, (), task=task, max_workers=max_workers
+    )
 
 
 def test_yarn_vendor_syncs_lock_and_config_but_keeps_cache_separate(tmp_path, mocker):
