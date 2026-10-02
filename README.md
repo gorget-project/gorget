@@ -262,6 +262,10 @@ A later build can use the extracted directory as `GRADLE_USER_HOME` and pass
 `--offline`. Gradle then fails if the build needs a dependency that the first
 build did not resolve.
 
+Set optional `max-workers` to a positive integer to limit Gradle workers.
+Use one worker when concurrent Scala tasks contend for a cold Zinc compiler
+cache. Without this field, Gradle keeps its default worker limit.
+
 Retain a Gradle build file with `outputs` to use it in a later post step.
 Paths are relative to the vendor workspace root, including any module path.
 Each path or glob must select exactly one file inside that workspace. Missing
@@ -273,6 +277,7 @@ transform:
   - type: vendor
     ecosystem: gradle
     task: releaseTarGz
+    max-workers: 1
     archive-name: "kafka-${VERSION}-gradle-vendor.tar.gz"
     outputs:
       - path: "core/build/distributions/kafka_*-${VERSION}.tgz"

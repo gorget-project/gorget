@@ -28,7 +28,7 @@ from gorget.transform.vendor.cargo import CargoVendor
 from gorget.transform.vendor.combine import combine_vendor_archives
 from gorget.transform.vendor.composer import ComposerVendor
 from gorget.transform.vendor.go import GoVendor
-from gorget.transform.vendor.gradle import GradleVendor
+from gorget.transform.vendor.gradle import GradleVendor, validate_max_workers
 from gorget.transform.vendor.maven import MavenVendor
 from gorget.transform.vendor.npm import NpmVendor
 from gorget.transform.vendor.pnpm import PnpmVendor
@@ -53,7 +53,7 @@ class VendorHandler:
         archive_name = step.archive_name or f"{ctx.vars.package}-vendor.tar.gz"
         archive_path = derived_artifact_path(ctx.work_dir, "vendor", archive_name)
 
-        self._validate_outputs(step, ctx, archive_name)
+        self._validate_build_options(step, ctx, archive_name)
         retained_artifacts: list[Artifact] = []
 
         use_offline_cache = (
@@ -135,6 +135,7 @@ class VendorHandler:
                         step.platforms or (),
                         sync_go_modules=step.sync_go_modules,
                         gradle_task=step.task if step.ecosystem == "gradle" else None,
+                        gradle_max_workers=step.max_workers,
                     )
                     module_outputs.append((module, output))
                 for module in step.modules:
@@ -179,11 +180,16 @@ class VendorHandler:
         )
 
     @staticmethod
-    def _validate_outputs(step: VendorStep, ctx: VendorRunContext, archive_name: str) -> None:
+    def _validate_build_options(step: VendorStep, ctx: VendorRunContext, archive_name: str) -> None:
+        if step.max_workers is not None and step.ecosystem != "gradle":
+            raise GorgetConfigError("max-workers is only supported for ecosystem: gradle")
+        validate_max_workers(step.max_workers)
         if step.outputs and step.ecosystem != "gradle":
             raise GorgetConfigError("vendor outputs are only supported for ecosystem: gradle")
         names = {archive_name}
         for output in step.outputs:
+            if not isinstance(output.path, str) or not isinstance(output.name, str):
+                raise GorgetConfigError("vendor output path and name must be strings")
             path = Path(output.path)
             if not output.path or path.is_absolute() or ".." in path.parts:
                 raise GorgetConfigError("vendor output path must stay within the vendor workspace")
@@ -219,15 +225,17 @@ class VendorHandler:
         *,
         sync_go_modules: bool,
         gradle_task: str | None,
+        gradle_max_workers: int | None,
     ) -> Path:
         if gradle_task is not None:
-            return ecosystem.vendor(
+            return cast(GradleVendor, ecosystem).vendor(
                 module_dir,
                 toolchain,
                 package_dir,
                 use_workspace,
                 platforms,
                 task=gradle_task,
+                max_workers=gradle_max_workers,
             )
         if sync_go_modules:
             go_vendor = cast(GoVendor, ecosystem)
