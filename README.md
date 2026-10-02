@@ -262,6 +262,36 @@ A later build can use the extracted directory as `GRADLE_USER_HOME` and pass
 `--offline`. Gradle then fails if the build needs a dependency that the first
 build did not resolve.
 
+Retain a Gradle build file with `outputs` to use it in a later post step.
+Paths are relative to the vendor workspace root, including any module path.
+Each path or glob must select exactly one file inside that workspace. Missing
+files, multiple matches, escaping symlinks, and duplicate artifact names fail
+the pipeline. Source0 stays unchanged.
+
+```yaml
+transform:
+  - type: vendor
+    ecosystem: gradle
+    task: releaseTarGz
+    archive-name: "kafka-${VERSION}-gradle-vendor.tar.gz"
+    outputs:
+      - path: "core/build/distributions/kafka_*-${VERSION}.tgz"
+        name: "kafka-${VERSION}-runtime.tgz"
+post:
+  - type: run
+    artifacts: ["kafka-${VERSION}-runtime.tgz"]
+    command: ["./generate-bundled-provides.sh", "kafka-${VERSION}-runtime.tgz"]
+publish:
+  files:
+    - "kafka-${VERSION}.tar.gz"
+    - "kafka-${VERSION}-gradle-vendor.tar.gz"
+```
+
+The post script consumes the first build's runtime archive. The explicit
+`publish` list excludes that intermediate archive from the sources manifest.
+Without `publish`, Gorget publishes all artifacts as before. Dry runs plan the
+retained artifact names without running Gradle or reading build files.
+
 ### `verify:`
 
 Runs after `transform:`. Validates integrity/authenticity of what was
