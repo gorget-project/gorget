@@ -87,6 +87,14 @@ _DEFAULT_NPM_PLATFORMS: list[VendorPlatform] = [
 
 
 @dataclass(frozen=True, kw_only=True)
+class VendorOutput:
+    """One build file selected relative to the vendor workspace root."""
+
+    path: str
+    name: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class VendorStep:
     type: Literal["vendor"] = "vendor"
     ecosystem: Literal[
@@ -94,6 +102,7 @@ class VendorStep:
     ]
     # Gradle-specific task. Other ecosystems ignore this value.
     task: str = "build"
+    outputs: list[VendorOutput] = field(default_factory=list)
     archive_name: str | None = None
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
     # Select a downloaded source archive when fetch also acquires signatures
