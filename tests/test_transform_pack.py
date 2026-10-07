@@ -6,6 +6,7 @@ from gorget.config.schema import PackStep
 from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError
 from gorget.pipeline.result import PipelineReport
+from gorget.pipeline.source import SourceWorkspace
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.transform.pack import PackHandler
@@ -14,7 +15,7 @@ from gorget.transform.pack import PackHandler
 def make_ctx(package_dir, work_dir, dry_run=False):
     return TransformContext(
         work_dir=work_dir,
-        source_dir=None,
+        source=SourceWorkspace(),
         vars=SubstitutionVars(
             version="1.2.3", old_version=None, package="foo", spec_file="foo.spec"
         ),

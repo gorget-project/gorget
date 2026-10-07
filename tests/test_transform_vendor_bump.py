@@ -1,22 +1,24 @@
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from gorget.config.schema import ToolchainEntry, VendorBumpEntry, VendorBumpStep, VendorModule
 from gorget.config.substitution import SubstitutionVars
-from gorget.exceptions import GorgetConfigError, GorgetTransientError
-from gorget.pipeline.result import PipelineReport
-from gorget.pipeline.state import StageState
-from gorget.transform.base import TransformContext
-from gorget.transform.vendor_bump import (
+from gorget.dependencies.update import (
     _STRATEGIES,
-    VendorBumpHandler,
     _CargoPin,
     _GoPin,
     _MavenPin,
     _parse_constraint,
 )
+from gorget.exceptions import GorgetConfigError, GorgetTransientError
+from gorget.pipeline.result import PipelineReport
+from gorget.pipeline.source import SourceWorkspace
+from gorget.pipeline.state import StageState
+from gorget.transform.base import TransformContext
+from gorget.transform.vendor_bump import VendorBumpHandler
 
 _NPM = _STRATEGIES["npm"]
 _PNPM = _STRATEGIES["pnpm"]
@@ -34,7 +36,7 @@ def _fail(stderr="boom"):
 def make_ctx(work_dir, source_dir, toolchain=(), dry_run=False):
     return TransformContext(
         work_dir=work_dir,
-        source_dir=source_dir,
+        source=SourceWorkspace(path=source_dir),
         vars=SubstitutionVars(
             version="1.2.3", old_version=None, package="foo", spec_file="foo.spec"
         ),
@@ -53,28 +55,34 @@ def make_state(work_dir):
 
 
 def test_go_pin_runs_edit_then_tidy(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     entry = VendorBumpEntry(dependency="golang.org/x/net", version="0.23.0")
     _GoPin().apply(tmp_path, entry, [])
     assert mock_run.call_args_list[0].args[0] == [
-        "go", "mod", "edit", "-require=golang.org/x/net@0.23.0",
+        "go",
+        "mod",
+        "edit",
+        "-require=golang.org/x/net@0.23.0",
     ]
     assert mock_run.call_args_list[1].args[0] == ["go", "mod", "tidy"]
 
 
 def test_go_pin_edit_failure_raises(tmp_path, mocker):
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_fail("bad module"))
+    mocker.patch("gorget.dependencies.update.run", return_value=_fail("bad module"))
     entry = VendorBumpEntry(dependency="x", version="1.0.0")
     with pytest.raises(GorgetTransientError, match="bad module"):
         _GoPin().apply(tmp_path, entry, [])
 
 
 def test_go_pin_tilde_prefix(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     entry = VendorBumpEntry(dependency="golang.org/x/text", version="~0.39")
     _GoPin().apply(tmp_path, entry, [])
     assert mock_run.call_args_list[0].args[0] == [
-        "go", "mod", "edit", "-require=golang.org/x/text@0.39",
+        "go",
+        "mod",
+        "edit",
+        "-require=golang.org/x/text@0.39",
     ]
 
 
@@ -87,10 +95,8 @@ def test_maven_bump_updates_dependency_version(tmp_path, mocker):
         "<groupId>org.apache.commons</groupId><artifactId>commons-text</artifactId>"
         "<version>1.11.0</version></dependency></dependencies></project>"
     )
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
-    entry = VendorBumpEntry(
-        dependency="org.apache.commons:commons-text", version="1.12.0"
-    )
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
+    entry = VendorBumpEntry(dependency="org.apache.commons:commons-text", version="1.12.0")
 
     _MavenPin().apply(tmp_path, entry, [])
 
@@ -123,7 +129,7 @@ def test_maven_bump_reports_command_failure(tmp_path, mocker):
         "<groupId>org.example</groupId><artifactId>lib</artifactId><version>0.9</version>"
         "</dependency></dependencies></project>"
     )
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_fail("plugin failed"))
+    mocker.patch("gorget.dependencies.update.run", return_value=_fail("plugin failed"))
     entry = VendorBumpEntry(dependency="org.example:lib", version="1.0.0")
     with pytest.raises(GorgetTransientError, match="plugin failed"):
         _MavenPin().apply(tmp_path, entry, [])
@@ -136,7 +142,7 @@ def test_maven_bump_manages_transitive_dependency(tmp_path, mocker):
         "<groupId>org.example</groupId><artifactId>app</artifactId><version>1</version>"
         "</project>"
     )
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run")
+    mock_run = mocker.patch("gorget.dependencies.update.run")
 
     _MavenPin().apply(
         tmp_path,
@@ -158,11 +164,9 @@ def test_maven_bump_updates_existing_dependency_management_entry(tmp_path, mocke
         "<groupId>org.example</groupId><artifactId>lib</artifactId><version>1.0</version>"
         "</dependency></dependencies></dependencyManagement></project>"
     )
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
 
-    _MavenPin().apply(
-        tmp_path, VendorBumpEntry(dependency="org.example:lib", version="2.0"), []
-    )
+    _MavenPin().apply(tmp_path, VendorBumpEntry(dependency="org.example:lib", version="2.0"), [])
 
     assert mock_run.call_args.args[0][0:2] == ["mvn", "versions:use-dep-version"]
 
@@ -172,7 +176,7 @@ def test_maven_bump_updates_existing_dependency_management_entry(tmp_path, mocke
 
 def test_npm_direct_bumps_dependency_and_adds_override(tmp_path, mocker):
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"left-pad": "^1.0.0"}}))
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _NPM.apply(tmp_path, VendorBumpEntry(dependency="left-pad", version="1.3.0"), [])
 
     data = json.loads((tmp_path / "package.json").read_text())
@@ -182,7 +186,11 @@ def test_npm_direct_bumps_dependency_and_adds_override(tmp_path, mocker):
     # Full install (not --package-lock-only) -- only a real resolve applies the
     # override to a pruned transitive.
     assert mock_run.call_args.args[0] == [
-        "npm", "install", "--ignore-scripts", "--no-audit", "--no-fund",
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
     ]
 
 
@@ -190,7 +198,7 @@ def test_npm_transitive_only_adds_override_no_error(tmp_path, mocker):
     # Dependency is NOT a direct dep -- the common CVE case. Must not error;
     # forces it via overrides.
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"express": "^4.0.0"}}))
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _NPM.apply(tmp_path, VendorBumpEntry(dependency="minimist", version="1.2.6"), [])
 
     data = json.loads((tmp_path / "package.json").read_text())
@@ -200,27 +208,37 @@ def test_npm_transitive_only_adds_override_no_error(tmp_path, mocker):
 
 def test_npm_prunes_target_and_dependents_from_lock(tmp_path, mocker):
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"react-router-dom": "^7"}}))
-    (tmp_path / "package-lock.json").write_text(json.dumps({"packages": {
-        "": {"name": "root"},
-        "mantine-ui": {"dependencies": {"react-router-dom": "^7.17.0"}},  # workspace root, keep
-        "node_modules/react-router": {"version": "7.17.0"},               # target -> prune
-        "node_modules/react-router-dom": {
-            "version": "7.17.0", "dependencies": {"react-router": "7.17.0"}},  # dependent -> prune
-        "node_modules/unrelated": {"version": "1.0.0"},                   # keep
-    }}))
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "": {"name": "root"},
+                    "mantine-ui": {
+                        "dependencies": {"react-router-dom": "^7.17.0"}
+                    },  # workspace root, keep
+                    "node_modules/react-router": {"version": "7.17.0"},  # target -> prune
+                    "node_modules/react-router-dom": {
+                        "version": "7.17.0",
+                        "dependencies": {"react-router": "7.17.0"},
+                    },  # dependent -> prune
+                    "node_modules/unrelated": {"version": "1.0.0"},  # keep
+                }
+            }
+        )
+    )
+    mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _NPM.apply(tmp_path, VendorBumpEntry(dependency="react-router", version="~7.18"), [])
 
     pkgs = json.loads((tmp_path / "package-lock.json").read_text())["packages"]
-    assert "node_modules/react-router" not in pkgs        # target pruned
-    assert "node_modules/react-router-dom" not in pkgs    # dependent pruned
-    assert "node_modules/unrelated" in pkgs               # untouched
-    assert "mantine-ui" in pkgs and "" in pkgs            # roots never pruned
+    assert "node_modules/react-router" not in pkgs  # target pruned
+    assert "node_modules/react-router-dom" not in pkgs  # dependent pruned
+    assert "node_modules/unrelated" in pkgs  # untouched
+    assert "mantine-ui" in pkgs and "" in pkgs  # roots never pruned
 
 
 def test_npm_tilde_prefix(tmp_path, mocker):
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"lodash": "^4.0.0"}}))
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _NPM.apply(tmp_path, VendorBumpEntry(dependency="lodash", version="~4.18"), [])
     data = json.loads((tmp_path / "package.json").read_text())
     assert data["dependencies"]["lodash"] == "~4.18"
@@ -234,7 +252,7 @@ def test_npm_removes_node_modules_after_install(tmp_path, mocker):
         (tmp_path / "node_modules").mkdir(exist_ok=True)
         return _ok()
 
-    mocker.patch("gorget.transform.vendor_bump.run", side_effect=_install)
+    mocker.patch("gorget.dependencies.update.run", side_effect=_install)
     _NPM.apply(tmp_path, VendorBumpEntry(dependency="x", version="1.0.0"), [])
     assert not (tmp_path / "node_modules").exists()
 
@@ -246,7 +264,7 @@ def test_npm_missing_package_json_raises(tmp_path):
 
 def test_npm_install_failure_raises(tmp_path, mocker):
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"x": "^1.0.0"}}))
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_fail("npm error"))
+    mocker.patch("gorget.dependencies.update.run", return_value=_fail("npm error"))
     with pytest.raises(GorgetTransientError, match="npm error"):
         _NPM.apply(tmp_path, VendorBumpEntry(dependency="x", version="1.0.0"), [])
 
@@ -260,7 +278,7 @@ def test_pnpm_writes_overrides_to_workspace_yaml(tmp_path, mocker):
     # pnpm v10+ ignores package.json's `pnpm` field -- overrides must land in
     # pnpm-workspace.yaml (created here if absent).
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"react": "^18.0.0"}}))
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _PNPM.apply(tmp_path, VendorBumpEntry(dependency="nanoid", version="3.3.8"), [])
 
     ws = yaml.safe_load((tmp_path / "pnpm-workspace.yaml").read_text())
@@ -276,7 +294,7 @@ def test_pnpm_merges_existing_workspace_yaml(tmp_path, mocker):
 
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"react": "^18.0.0"}}))
     (tmp_path / "pnpm-workspace.yaml").write_text('packages:\n  - "mantine-ui"\n')
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _PNPM.apply(tmp_path, VendorBumpEntry(dependency="nanoid", version="3.3.8"), [])
 
     ws = yaml.safe_load((tmp_path / "pnpm-workspace.yaml").read_text())
@@ -289,7 +307,7 @@ def test_pnpm_merges_existing_workspace_yaml(tmp_path, mocker):
 
 def test_yarn_v1_uses_resolutions_and_plain_install(tmp_path, mocker):
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"react": "^17.0.0"}}))
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _YARN.apply(tmp_path, VendorBumpEntry(dependency="minimist", version="1.2.6"), [])
 
     data = json.loads((tmp_path / "package.json").read_text())
@@ -301,7 +319,7 @@ def test_yarn_berry_uses_update_lockfile_mode(tmp_path, mocker):
     (tmp_path / "package.json").write_text(
         json.dumps({"packageManager": "yarn@4.15.0", "dependencies": {"react": "^18.0.0"}})
     )
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _YARN.apply(tmp_path, VendorBumpEntry(dependency="minimist", version="1.2.6"), [])
     assert mock_run.call_args.args[0] == ["yarn", "install", "--mode", "update-lockfile"]
 
@@ -311,7 +329,7 @@ def test_yarn_berry_uses_update_lockfile_mode(tmp_path, mocker):
 
 def test_cargo_direct_bumps_toml_and_updates(tmp_path, mocker):
     (tmp_path / "Cargo.toml").write_text('[dependencies]\nserde = "1.0.0"\nlibc = "0.2.0"\n')
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _CargoPin().apply(tmp_path, VendorBumpEntry(dependency="serde", version="1.0.190"), [])
 
     text = (tmp_path / "Cargo.toml").read_text()
@@ -323,10 +341,15 @@ def test_cargo_direct_bumps_toml_and_updates(tmp_path, mocker):
 def test_cargo_transitive_uses_precise(tmp_path, mocker):
     # Not a direct dependency in Cargo.toml -> pin exact version in the lockfile.
     (tmp_path / "Cargo.toml").write_text('[dependencies]\nlibc = "0.2.0"\n')
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _CargoPin().apply(tmp_path, VendorBumpEntry(dependency="smallvec", version="1.13.2"), [])
     assert mock_run.call_args.args[0] == [
-        "cargo", "update", "-p", "smallvec", "--precise", "1.13.2",
+        "cargo",
+        "update",
+        "-p",
+        "smallvec",
+        "--precise",
+        "1.13.2",
     ]
 
 
@@ -337,7 +360,7 @@ def test_cargo_missing_toml_raises(tmp_path):
 
 def test_cargo_update_failure_raises(tmp_path, mocker):
     (tmp_path / "Cargo.toml").write_text('[dependencies]\nserde = "1.0.0"\n')
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_fail("cargo error"))
+    mocker.patch("gorget.dependencies.update.run", return_value=_fail("cargo error"))
     with pytest.raises(GorgetTransientError, match="cargo error"):
         _CargoPin().apply(tmp_path, VendorBumpEntry(dependency="serde", version="1.0.190"), [])
 
@@ -349,9 +372,19 @@ def test_handler_applies_pins_per_module(tmp_path, mocker):
     source_dir = tmp_path / "src"
     (source_dir / "server").mkdir(parents=True)
     (source_dir / "server" / "go.mod").write_text("module example\n")
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
-    # No resolver -> skip both skip-check and post-verify; isolate dispatch.
-    mocker.patch.dict("gorget.transform.vendor_bump._RESOLVERS", clear=True)
+    calls = 0
+
+    def command(args, cwd=None, env=None):
+        nonlocal calls
+        calls += 1
+        if args[:3] == ["go", "list", "-m"]:
+            version = "v1.0.0" if calls > 2 else "v0.1.0"
+            return subprocess.CompletedProcess(args, 0, "x " + version, "")
+        if "edit" in args:
+            (Path(cwd) / "go.mod").write_text("module example\nrequire x v1.0.0\n")
+        return _ok()
+
+    mock_run = mocker.patch("gorget.dependencies.update.run", side_effect=command)
 
     ctx = make_ctx(tmp_path / "work", source_dir=source_dir)
     state = make_state(tmp_path / "work")
@@ -362,12 +395,13 @@ def test_handler_applies_pins_per_module(tmp_path, mocker):
     )
     VendorBumpHandler().run(step, ctx, state)
 
-    assert mock_run.call_args_list[0].kwargs["cwd"] == source_dir / "server"
+    assert mock_run.call_args_list[0].kwargs["cwd"].name == "server"
+    assert mock_run.call_args_list[0].kwargs["cwd"] != source_dir / "server"
     assert state.source.dirty is True
 
 
 def test_handler_dry_run_does_nothing(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run")
+    mock_run = mocker.patch("gorget.dependencies.update.run")
     ctx = make_ctx(tmp_path / "work", source_dir=None, dry_run=True)
     state = make_state(tmp_path / "work")
     step = VendorBumpStep(ecosystem="go", pins=[VendorBumpEntry(dependency="x", version="1.0.0")])
@@ -385,7 +419,7 @@ def test_handler_skips_when_version_already_satisfies_minimum(tmp_path, mocker):
     (source / "package-lock.json").write_text(
         json.dumps({"packages": {"node_modules/lodash": {"version": "4.18.0"}}})
     )
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     step = VendorBumpStep(
         ecosystem="npm",
         pins=[VendorBumpEntry(dependency="lodash", version="4.17.21")],
@@ -402,7 +436,7 @@ def test_handler_skips_when_version_matches_prefix(tmp_path, mocker):
     (source / "package-lock.json").write_text(
         json.dumps({"packages": {"node_modules/lodash": {"version": "4.18.2"}}})
     )
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     step = VendorBumpStep(
         ecosystem="npm",
         pins=[VendorBumpEntry(dependency="lodash", version="~4.18")],
@@ -422,10 +456,12 @@ def test_handler_applies_when_version_does_not_satisfy(tmp_path, mocker):
     # Simulate `npm install` updating the lockfile to the bumped version, so the
     # post-apply verification sees the new version.
     def _install(args, cwd=None):
-        lock.write_text(json.dumps({"packages": {"node_modules/lodash": {"version": "4.18.0"}}}))
+        (Path(cwd) / "package-lock.json").write_text(
+            json.dumps({"packages": {"node_modules/lodash": {"version": "4.18.0"}}})
+        )
         return _ok()
 
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", side_effect=_install)
+    mock_run = mocker.patch("gorget.dependencies.update.run", side_effect=_install)
     step = VendorBumpStep(
         ecosystem="npm",
         pins=[VendorBumpEntry(dependency="lodash", version="4.18.0")],
@@ -443,7 +479,7 @@ def test_handler_raises_when_dependency_absent_after_bump(tmp_path, mocker):
     source.mkdir()
     (source / "package.json").write_text(json.dumps({"dependencies": {"express": "^4.0.0"}}))
     (source / "package-lock.json").write_text(json.dumps({"packages": {}}))  # dep never appears
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     step = VendorBumpStep(
         ecosystem="npm",
         pins=[VendorBumpEntry(dependency="not-in-tree", version="1.0.0")],
@@ -465,10 +501,12 @@ def test_handler_raises_when_bump_did_not_take(tmp_path, mocker):
     # Simulate npm reinstalling the OLD version (override not honored): the
     # handler must fail closed on the version, not silently pass.
     def _install(args, cwd=None):
-        lock.write_text(json.dumps({"packages": {"node_modules/minimist": {"version": "1.2.0"}}}))
+        (Path(cwd) / "package-lock.json").write_text(
+            json.dumps({"packages": {"node_modules/minimist": {"version": "1.2.0"}}})
+        )
         return _ok()
 
-    mocker.patch("gorget.transform.vendor_bump.run", side_effect=_install)
+    mocker.patch("gorget.dependencies.update.run", side_effect=_install)
     step = VendorBumpStep(
         ecosystem="npm",
         pins=[VendorBumpEntry(dependency="minimist", version="1.2.6")],
@@ -490,14 +528,14 @@ def test_parse_constraint_tilde_prefix():
 
 
 def test_toolchain_param_does_not_change_command(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     entry = VendorBumpEntry(dependency="golang.org/x/net", version="0.23.0")
     _GoPin().apply(tmp_path, entry, [ToolchainEntry(name="go", version="1.22.0")])
     assert mock_run.call_args_list[0].args[0][:3] == ["go", "mod", "edit"]
 
 
 def test_go_pins_are_applied_before_one_tidy(tmp_path, mocker):
-    mock_run = mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mock_run = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     pins = [
         VendorBumpEntry(dependency="example.org/a", version="v1.2.0"),
         VendorBumpEntry(dependency="example.org/b", version="v1.3.0"),
@@ -524,7 +562,7 @@ def test_yarn_global_pin_removes_older_parent_and_descriptor_resolutions(tmp_pat
             }
         )
     )
-    mocker.patch("gorget.transform.vendor_bump.run", return_value=_ok())
+    mocker.patch("gorget.dependencies.update.run", return_value=_ok())
     _YARN.apply(tmp_path, VendorBumpEntry(dependency="foo", version="2.0.0"), [])
     assert json.loads(manifest.read_text())["resolutions"] == {"foo": ">=2.0.0", "other": "2.0.0"}
 
@@ -546,7 +584,7 @@ def test_go_workspace_member_is_checked_without_workspace_mvs(tmp_path, mocker):
             updated = True
         return _ok()
 
-    mocker.patch("gorget.transform.vendor_bump.run", side_effect=fake_run)
+    mocker.patch("gorget.dependencies.update.run", side_effect=fake_run)
     step = VendorBumpStep(
         ecosystem="go",
         modules=[VendorModule(path="apps/member")],
@@ -556,7 +594,9 @@ def test_go_workspace_member_is_checked_without_workspace_mvs(tmp_path, mocker):
     VendorBumpHandler().run(step, make_ctx(tmp_path, source), state)
     queries = [call for call in calls if call[0][:3] == ["go", "list", "-m"]]
     assert len(queries) == 2
-    assert all(cwd == member and env == {"GOWORK": "off"} for _, cwd, env in queries)
+    assert all(
+        cwd.parts[-2:] == ("apps", "member") and env == {"GOWORK": "off"} for _, cwd, env in queries
+    )
     assert any(args[:3] == ["go", "mod", "edit"] for args, _, _ in calls)
 
 
@@ -573,7 +613,37 @@ def test_yarn_bump_keeps_install_state_outside_source(tmp_path, mocker):
         state_paths.append(state_path)
         return _ok()
 
-    mocker.patch("gorget.transform.vendor_bump.run", side_effect=install)
+    mocker.patch("gorget.dependencies.update.run", side_effect=install)
     _YARN.apply(tmp_path, VendorBumpEntry(dependency="foo", version="2.0.0"), [])
     assert not state_paths[0].exists()
     assert not (tmp_path / ".yarn/install-state.gz").exists()
+
+
+@pytest.mark.parametrize("ecosystem", ["npm", "pnpm", "yarn"])
+def test_node_pin_set_resolves_once_after_all_manifest_edits(tmp_path, mocker, ecosystem):
+    import yaml
+
+    from gorget.dependencies.update import _STRATEGIES
+
+    (tmp_path / "package.json").write_text('{"dependencies":{"foo":"1","bar":"1"}}')
+
+    def resolve(args, cwd=None, env=None):
+        manifest = json.loads((tmp_path / "package.json").read_text())
+        assert manifest["dependencies"] == {"foo": ">=2.0.0", "bar": ">=3.0.0"}
+        if ecosystem == "pnpm":
+            overrides = yaml.safe_load((tmp_path / "pnpm-workspace.yaml").read_text())["overrides"]
+        else:
+            overrides = manifest["resolutions" if ecosystem == "yarn" else "overrides"]
+        assert overrides == {"foo": ">=2.0.0", "bar": ">=3.0.0"}
+        return _ok()
+
+    runner = mocker.patch("gorget.dependencies.update.run", side_effect=resolve)
+    _STRATEGIES[ecosystem].apply_many(
+        tmp_path,
+        [
+            VendorBumpEntry(dependency="foo", version="2.0.0"),
+            VendorBumpEntry(dependency="bar", version="3.0.0"),
+        ],
+        [],
+    )
+    assert runner.call_count == 1

@@ -8,11 +8,14 @@ from pathlib import Path
 
 from gorget.config.schema import _DEFAULT_NPM_PLATFORMS, ToolchainEntry, VendorPlatform
 from gorget.exceptions import GorgetTransientError
-from gorget.toolchain import wrap_command
+from gorget.package_manager import PackageManager
 from gorget.util.subprocess_run import run
 
 
 class NpmVendor:
+    def source_files(self, *, sync_go_modules: bool = False) -> tuple[str, ...]:
+        return ()
+
     def vendor(
         self,
         module_dir: Path,
@@ -34,7 +37,7 @@ class NpmVendor:
                 "--os", platform.os,
                 "--libc", platform.libc,
             ]
-            result = run(wrap_command(cmd, toolchain), cwd=module_dir)
+            result = PackageManager(module_dir, toolchain, runner=run).run(cmd)
             if result.returncode != 0:
                 raise GorgetTransientError(
                     f"npm install failed for {platform.cpu}/{platform.os}/{platform.libc} "

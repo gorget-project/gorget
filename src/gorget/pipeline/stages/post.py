@@ -27,11 +27,11 @@ from typing import ClassVar
 
 from gorget.config.schema import BundledProvidesStep, PipelineSpec, PostRunStep
 from gorget.context import RunContext
+from gorget.dependencies import bundled_provides
 from gorget.exceptions import GorgetTransientError
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
-from gorget.transform.vendor.lockfile import parse_bundled_provides
 from gorget.util.subprocess_run import run
 from gorget.util.version import rpm_version
 
@@ -68,7 +68,7 @@ class PostStage:
                 "bundled-provides step requires a source checkout -- add a preceding "
                 "'git' fetch step whose lockfiles this step can read"
             )
-        provides = parse_bundled_provides(
+        provides = bundled_provides(
             step.ecosystem, state.source.path, step.modules
         )
         # Namespace is bundled(npm(...)) for every JS ecosystem: npm/pnpm/yarn

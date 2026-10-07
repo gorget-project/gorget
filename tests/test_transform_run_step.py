@@ -8,6 +8,7 @@ from gorget.config.substitution import SubstitutionVars
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.fetch.base import FetchedArtifact
 from gorget.pipeline.result import PipelineReport
+from gorget.pipeline.source import SourceWorkspace
 from gorget.pipeline.state import StageState
 from gorget.transform.base import TransformContext
 from gorget.transform.run_step import RunHandler
@@ -17,7 +18,7 @@ from gorget.util.archive import make_tar_gz
 def make_ctx(work_dir, source_dir, toolchain=(), dry_run=False):
     return TransformContext(
         work_dir=work_dir,
-        source_dir=source_dir,
+        source=SourceWorkspace(path=source_dir),
         vars=SubstitutionVars(
             version="1.2.3", old_version=None, package="foo", spec_file="foo.spec"
         ),
