@@ -36,6 +36,7 @@ from gorget.config.schema import (
     VendorBumpEntry,
     VendorConstraintEntry,
     VendorModule,
+    VendorOutput,
     VendorPlatform,
     VerifySection,
     VerifyStep,
@@ -116,6 +117,11 @@ def _parse_transform_step(raw_step: object) -> TransformStep:
         step["pins"] = [VendorBumpEntry(**_snake_case_keys(pin)) for pin in step["pins"]]
     if "modules" in step:
         step["modules"] = [VendorModule(**_snake_case_keys(mod)) for mod in step["modules"]]
+    if step_type == "vendor" and "outputs" in step:
+        try:
+            step["outputs"] = [VendorOutput(**_snake_case_keys(o)) for o in step["outputs"]]
+        except (TypeError, AttributeError) as exc:
+            raise GorgetConfigError(f"Invalid vendor outputs: {exc}") from exc
     if step_type == "vendor" and "platforms" in step:
         step["platforms"] = [VendorPlatform(**_snake_case_keys(p)) for p in step["platforms"]]
     try:

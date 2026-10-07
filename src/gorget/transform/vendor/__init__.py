@@ -8,9 +8,15 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
-from gorget.config.schema import ToolchainEntry, VendorModule, VendorPlatform, VendorStep
+from gorget.config.schema import (
+    ToolchainEntry,
+    VendorModule,
+    VendorOutput,
+    VendorPlatform,
+    VendorStep,
+)
 from gorget.exceptions import GorgetConfigError
-from gorget.pipeline.artifact import build_derived_artifact, derived_artifact_path
+from gorget.pipeline.artifact import Artifact, build_derived_artifact, derived_artifact_path
 from gorget.pipeline.source import SourceChange
 from gorget.transform.vendor.base import (
     VendorEcosystem,
@@ -22,7 +28,7 @@ from gorget.transform.vendor.cargo import CargoVendor
 from gorget.transform.vendor.combine import combine_vendor_archives
 from gorget.transform.vendor.composer import ComposerVendor
 from gorget.transform.vendor.go import GoVendor
-from gorget.transform.vendor.gradle import GradleVendor
+from gorget.transform.vendor.gradle import GradleVendor, validate_max_workers
 from gorget.transform.vendor.maven import MavenVendor
 from gorget.transform.vendor.npm import NpmVendor
 from gorget.transform.vendor.pnpm import PnpmVendor
@@ -46,6 +52,9 @@ class VendorHandler:
         ecosystem = _ECOSYSTEMS[step.ecosystem]
         archive_name = step.archive_name or f"{ctx.vars.package}-vendor.tar.gz"
         archive_path = derived_artifact_path(ctx.work_dir, "vendor", archive_name)
+
+        self._validate_build_options(step, ctx, archive_name)
+        retained_artifacts: list[Artifact] = []
 
         use_offline_cache = (
             step.ecosystem == "pnpm" if step.offline_cache is None else step.offline_cache
@@ -126,6 +135,7 @@ class VendorHandler:
                         step.platforms or (),
                         sync_go_modules=step.sync_go_modules,
                         gradle_task=step.task if step.ecosystem == "gradle" else None,
+                        gradle_max_workers=step.max_workers,
                     )
                     module_outputs.append((module, output))
                 for module in step.modules:
@@ -144,6 +154,7 @@ class VendorHandler:
                 combine_vendor_archives(
                     module_outputs, archive_path, mtime=mtime, root_files=root_files
                 )
+                retained_artifacts = self._retain_outputs(step, ctx, vendor_source_dir)
             except BaseException:
                 shutil.rmtree(temporary_source_root, ignore_errors=True)
                 raise
@@ -160,11 +171,48 @@ class VendorHandler:
             if vendor_source_dir is not None
             else ()
         )
+        if ctx.dry_run:
+            retained_artifacts = self._retain_outputs(step, ctx, None)
         return VendorResult(
-            artifacts=(artifact,),
+            artifacts=(artifact, *retained_artifacts),
             modules=modules,
             source_changes=tuple(source_changes),
         )
+
+    @staticmethod
+    def _validate_build_options(step: VendorStep, ctx: VendorRunContext, archive_name: str) -> None:
+        if step.max_workers is not None and step.ecosystem != "gradle":
+            raise GorgetConfigError("max-workers is only supported for ecosystem: gradle")
+        validate_max_workers(step.max_workers)
+        if step.outputs and step.ecosystem != "gradle":
+            raise GorgetConfigError("vendor outputs are only supported for ecosystem: gradle")
+        names = {archive_name}
+        for output in step.outputs:
+            if not isinstance(output.path, str) or not isinstance(output.name, str):
+                raise GorgetConfigError("vendor output path and name must be strings")
+            path = Path(output.path)
+            if not output.path or path.is_absolute() or ".." in path.parts:
+                raise GorgetConfigError("vendor output path must stay within the vendor workspace")
+            derived_artifact_path(ctx.work_dir, "vendor-output", output.name)
+            if output.name in names:
+                raise GorgetConfigError(f"Duplicate vendor output name: {output.name}")
+            names.add(output.name)
+
+    @staticmethod
+    def _retain_outputs(
+        step: VendorStep, ctx: VendorRunContext, workspace: Path | None
+    ) -> list[Artifact]:
+        artifacts = []
+        for output in step.outputs:
+            destination = derived_artifact_path(ctx.work_dir, "vendor-output", output.name)
+            if workspace is not None:
+                source = _select_output(workspace, output)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+            artifacts.append(build_derived_artifact(
+                destination, output.name, f"vendor:gradle output:{output.path}", ctx.dry_run
+            ))
+        return artifacts
 
     @staticmethod
     def _vendor_module(
@@ -177,15 +225,17 @@ class VendorHandler:
         *,
         sync_go_modules: bool,
         gradle_task: str | None,
+        gradle_max_workers: int | None,
     ) -> Path:
         if gradle_task is not None:
-            return ecosystem.vendor(
+            return cast(GradleVendor, ecosystem).vendor(
                 module_dir,
                 toolchain,
                 package_dir,
                 use_workspace,
                 platforms,
                 task=gradle_task,
+                max_workers=gradle_max_workers,
             )
         if sync_go_modules:
             go_vendor = cast(GoVendor, ecosystem)
@@ -198,3 +248,17 @@ class VendorHandler:
                 sync_go_modules=True,
             )
         return ecosystem.vendor(module_dir, toolchain, package_dir, use_workspace, platforms)
+
+
+def _select_output(workspace: Path, output: VendorOutput) -> Path:
+    matches = sorted(workspace.glob(output.path))
+    if len(matches) != 1:
+        raise GorgetConfigError(
+            f"vendor output {output.path!r} must match exactly one file; found {len(matches)}"
+        )
+    source = matches[0]
+    if not source.resolve().is_relative_to(workspace.resolve()):
+        raise GorgetConfigError(f"vendor output {output.path!r} escapes the vendor workspace")
+    if not source.is_file():
+        raise GorgetConfigError(f"vendor output {output.path!r} must be a file")
+    return source

@@ -90,3 +90,19 @@ def test_gradle_vendor_reports_build_failure(tmp_path, mocker):
 
     with pytest.raises(GorgetTransientError, match="dependency resolution failed"):
         GradleVendor().vendor(tmp_path)
+
+
+def test_gradle_vendor_limits_workers(tmp_path, mocker):
+    (tmp_path / "build.gradle").touch()
+    command = mocker.patch("gorget.transform.vendor.gradle.run", return_value=_completed())
+    GradleVendor().vendor(tmp_path, task="releaseTarGz", max_workers=1)
+    assert command.call_args.args[0] == [
+        "gradle", "--no-daemon", "--max-workers=1", "releaseTarGz",
+    ]
+
+
+@pytest.mark.parametrize("workers", [0, -1, True, "2", 1.5])
+def test_gradle_vendor_rejects_invalid_worker_limits(tmp_path, workers):
+    (tmp_path / "build.gradle").touch()
+    with pytest.raises(GorgetConfigError, match="positive integer"):
+        GradleVendor().vendor(tmp_path, max_workers=workers)
