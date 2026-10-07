@@ -125,7 +125,7 @@ def test_cargo_constraint_fails_when_below_minimum(tmp_path):
     assert results[0].status == "failed"
 
 
-def test_cargo_constraint_uses_highest_of_multiple_resolved_versions(tmp_path):
+def test_cargo_constraint_checks_lowest_of_multiple_resolved_versions(tmp_path):
     (tmp_path / "Cargo.lock").write_text(
         '[[package]]\nname = "tokio"\nversion = "1.20.0"\n\n'
         '[[package]]\nname = "tokio"\nversion = "1.38.1"\n'
@@ -133,7 +133,7 @@ def test_cargo_constraint_uses_highest_of_multiple_resolved_versions(tmp_path):
     entry = make_entry(package="tokio", ecosystem="cargo", version="1.38.1")
     modules = [VendoredModule(ecosystem="cargo", path=tmp_path)]
     results = check_vendor_constraints([entry], modules)
-    assert results[0].status == "passed"
+    assert results[0].status == "failed"
 
 
 def test_cargo_constraint_fails_when_not_found(tmp_path):
@@ -218,3 +218,32 @@ def test_checks_across_all_modules_for_ecosystem(tmp_path, mocker):
     assert len(results) == 2
     assert results[0].status == "passed"
     assert results[1].status == "failed"
+
+
+def test_npm_constraint_rejects_old_nested_copy(tmp_path):
+    import json
+
+    (tmp_path / "package-lock.json").write_text(json.dumps({"packages": {
+        "node_modules/foo": {"version": "2.0.0"},
+        "node_modules/parent/node_modules/foo": {"version": "1.0.0"}}}))
+    entry = make_entry(package="foo", ecosystem="npm", version="2.0.0")
+    results = check_vendor_constraints([entry], [VendoredModule(ecosystem="npm", path=tmp_path)])
+    assert results[0].status == "failed"
+
+
+def test_pnpm_constraint_rejects_old_snapshot(tmp_path):
+    (tmp_path / "pnpm-lock.yaml").write_text("snapshots:\n  foo@2.0.0: {}\n  foo@1.0.0: {}\n")
+    entry = make_entry(package="foo", ecosystem="pnpm", version="2.0.0")
+    results = check_vendor_constraints([entry], [VendoredModule(ecosystem="pnpm", path=tmp_path)])
+    assert results[0].status == "failed"
+
+
+def test_npm_v1_constraint_rejects_old_nested_copy(tmp_path):
+    import json
+
+    (tmp_path / "package-lock.json").write_text(json.dumps({"dependencies": {
+        "foo": {"version": "2.0.0"}, "parent": {"version": "1.0.0",
+        "dependencies": {"foo": {"version": "1.0.0"}}}}}))
+    entry = make_entry(package="foo", ecosystem="npm", version="2.0.0")
+    results = check_vendor_constraints([entry], [VendoredModule(ecosystem="npm", path=tmp_path)])
+    assert results[0].status == "failed"

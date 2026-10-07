@@ -17,6 +17,7 @@ from gorget.policy.base import VendoredModule
 class VendorResult:
     artifacts: tuple[Artifact, ...]
     modules: tuple[VendoredModule, ...]
+    source_changed: bool = False
 
 
 def resolve_vendored_modules(

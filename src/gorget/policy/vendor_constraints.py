@@ -19,6 +19,13 @@ from gorget.util.subprocess_run import run
 from gorget.util.version import meets_minimum
 
 
+def _lowest_version(versions: list[str]) -> str | None:
+    """A fixed newer copy must not hide an older vulnerable copy."""
+    if not versions:
+        return None
+    return min(versions, key=lambda v: tuple(int(p) for p in re.findall(r"\d+", v)[:3]))
+
+
 def _resolve_go_version(module_dir: Path, package: str) -> str | None:
     result = run(["go", "list", "-m", package], cwd=module_dir)
     if result.returncode != 0:
@@ -31,6 +38,7 @@ def _resolve_npm_version(module_dir: Path, package: str) -> str | None:
     lockfile = module_dir / "package-lock.json"
     if lockfile.is_file():
         data = json.loads(lockfile.read_text())
+        versions = []
         for path, pkg in data.get("packages", {}).items():
             if not path or "node_modules/" not in path:
                 continue
@@ -38,7 +46,19 @@ def _resolve_npm_version(module_dir: Path, package: str) -> str | None:
             if name == package:
                 version = pkg.get("version")
                 if isinstance(version, str):
-                    return version
+                    versions.append(version)
+        # npm v1 stores nested dependency trees instead of install paths.
+        pending = [data.get("dependencies", {})]
+        while pending:
+            dependencies = pending.pop()
+            for name, info in dependencies.items():
+                if not isinstance(info, dict):
+                    continue
+                if name == package and isinstance(info.get("version"), str):
+                    versions.append(info["version"])
+                pending.append(info.get("dependencies", {}))
+        if versions:
+            return _lowest_version(versions)
     package_json = module_dir / "node_modules" / package / "package.json"
     if package_json.is_file():
         data = json.loads(package_json.read_text())
@@ -59,11 +79,7 @@ def _resolve_cargo_version(module_dir: Path, package: str) -> str | None:
     ]
     if not versions:
         return None
-    # Cargo can resolve multiple coexisting versions of the same crate; take the
-    # most permissive reading -- at least one resolved instance meets the
-    # constraint -- consistent with vendor_constraints' npm resolution, which
-    # likewise only checks a single, direct location rather than every nested copy.
-    return max(versions, key=lambda v: tuple(int(p) for p in v.split(".") if p.isdigit()))
+    return _lowest_version(versions)
 
 
 def _resolve_pnpm_version(module_dir: Path, package: str) -> str | None:
@@ -72,12 +88,13 @@ def _resolve_pnpm_version(module_dir: Path, package: str) -> str | None:
         return None
     import yaml
     data = yaml.safe_load(lockfile.read_text())
+    versions = []
     for snapshot_key in data.get("snapshots", {}):
         key = snapshot_key.split("(", 1)[0]
         name, _, version = key.rpartition("@")
         if name == package and version:
-            return version
-    return None
+            versions.append(version)
+    return _lowest_version(versions)
 
 
 _YARN_VERSION_RE = re.compile(r'^\s+version:?\s+"?([0-9][^"\s]*)"?')
@@ -89,9 +106,8 @@ def _resolve_yarn_version(module_dir: Path, package: str) -> str | None:
     Both formats share the shape: an unindented key line lists the requested
     specs (e.g. `nanoid@^3.3.7:` for v1, `"nanoid@npm:^3.3.7":` for Berry),
     followed by an indented `version "x"` (v1) / `version: x` (Berry) line. A
-    package can appear in several blocks; return the highest resolved version
-    (with overrides/resolutions in play every copy is forced to the same one,
-    so any is representative, and max is the safe reading for "satisfies").
+    package can appear in several blocks; return the oldest resolved version
+    so a newer copy cannot mask an older vulnerable version.
     """
     lockfile = module_dir / "yarn.lock"
     if not lockfile.is_file():
@@ -116,7 +132,7 @@ def _resolve_yarn_version(module_dir: Path, package: str) -> str | None:
                 matching_block = False
     if not versions:
         return None
-    return max(versions, key=lambda v: tuple(int(p) for p in re.findall(r"\d+", v)[:3]))
+    return _lowest_version(versions)
 
 
 def _resolve_maven_version(module_dir: Path, package: str) -> str | None:
