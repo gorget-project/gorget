@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import tarfile
 from pathlib import Path
@@ -363,6 +364,8 @@ def test_submodule_update_failure_raises_transient_error(tmp_path, mocker):
         GitHandler().run(step, make_ctx(tmp_path))
 
 
+@pytest.mark.integration
+@pytest.mark.skipif(shutil.which("git") is None, reason="requires git on PATH")
 def test_pinned_tree_without_commit_history_is_reproducible(tmp_path):
     repo = tmp_path / "upstream"
     subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
