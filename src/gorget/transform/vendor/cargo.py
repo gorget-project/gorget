@@ -25,13 +25,15 @@ class CargoVendor:
         task: str = "build",
     ) -> Path:
         vendor_dir = module_dir / "vendor"
-        cmd = ["cargo", "vendor", str(vendor_dir)]
+        # A relative path keeps Cargo's source configuration valid after extraction.
+        cmd = ["cargo", "vendor", "vendor"]
         result = PackageManager(module_dir, toolchain, runner=run).run(cmd)
         if result.returncode != 0:
             raise GorgetTransientError(
                 f"cargo vendor failed in {module_dir}: {result.stderr.strip()}"
             )
+        (module_dir / "vendor-config.toml").write_text(result.stdout)
         return vendor_dir
 
     def archive_root_files(self, module_dir: Path) -> list[Path]:
-        return []
+        return [module_dir / "vendor-config.toml"]

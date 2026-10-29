@@ -180,6 +180,7 @@ transform:
         result = module_dir / "vendor"
         result.mkdir()
         (result / "dependency.txt").write_text("vendored dependency\n")
+        (module_dir / "vendor-config.toml").write_text("# Cargo source configuration\n")
         return result
 
     mocker.patch("gorget.transform.vendor.cargo.CargoVendor.vendor", side_effect=vendor)
@@ -188,6 +189,7 @@ transform:
     assert (ctx.output_dir / "foo-1.2.3.tar.gz").read_bytes() == original
     with tarfile.open(ctx.output_dir / "foo-vendor.tar.gz") as tar:
         assert tar.extractfile("vendor/dependency.txt").read() == b"vendored dependency\n"
+        assert tar.extractfile("vendor-config.toml").read() == b"# Cargo source configuration\n"
 
 
 def test_vendor_source_switch_rejects_uncommitted_source_changes(tmp_path, mocker):

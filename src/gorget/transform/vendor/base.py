@@ -87,7 +87,9 @@ class VendorEcosystem(Protocol):
         single-module archive's top level (see combine.py's `bare_vendor`) --
         empty for ecosystems with no such requirement.
 
-        Only `go` currently returns anything: go-vendor-tools' own
+        Cargo includes vendor-config.toml with the registry and Git source
+        replacements that offline builds need. Go includes its module files:
+        go-vendor-tools' own
         `go_vendor_archive` always packs go.mod/go.sum (or go.work/go.work.sum
         for a workspace) alongside vendor/, and `go_vendor_license
         --use-archive` depends on that layout, not just on convention -- see

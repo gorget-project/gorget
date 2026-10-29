@@ -16,6 +16,7 @@ import hashlib
 import shutil
 import subprocess
 import tarfile
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -387,3 +388,50 @@ def test_cargo_vendor_produces_vendor_archive(tmp_path):
     with tarfile.open(archive, "r:bz2") as tar:
         names = tar.getnames()
         assert any("itoa" in n for n in names), f"No itoa in cargo vendor: {names[:10]}"
+
+
+@pytest.mark.integration
+@requires_git
+@requires_cargo
+def test_cargo_vendor_config_supports_relocated_offline_git_build(tmp_path, monkeypatch):
+    monkeypatch.setenv("CARGO_HOME", str(tmp_path / "vendor-cargo-home"))
+    dependency_root = tmp_path / "dependency"
+    dependency_root.mkdir()
+    dependency = _make_git_repo(dependency_root, {
+        "Cargo.toml": '[package]\nname = "git-dep"\nversion = "0.1.0"\nedition = "2021"\n',
+        "src/lib.rs": "pub fn value() -> u32 { 42 }\n",
+    })
+    manifest = CARGO_TOML.replace(
+        'itoa = "1.0.0"',
+        f'git-dep = {{ git = "{dependency.as_uri()}", branch = "main" }}',
+    )
+    repo = _make_git_repo(tmp_path, {
+        "Cargo.toml": manifest,
+        "src/lib.rs": "pub fn value() -> u32 { git_dep::value() }\n",
+    })
+    subprocess.run(["cargo", "generate-lockfile"], cwd=repo, capture_output=True, check=True)
+    _run_git(["add", "Cargo.lock"], repo)
+    _run_git(["commit", "-m", "add lockfile"], repo)
+    ctx = _make_ctx(
+        tmp_path / "pkg", tmp_path / "output", CARGO_PIPELINE.format(repo=str(repo)),
+    )
+    report = PipelineRunner(ctx, resolve_pipeline_spec(ctx)).run()
+    assert {s.name: s.status for s in report.stages}["transform"] == "success"
+
+    build_dir = tmp_path / "relocated-build"
+    shutil.copytree(repo, build_dir, ignore=shutil.ignore_patterns(".git"))
+    with tarfile.open(tmp_path / "output/test-cargo-vendor.tar.bz2") as archive:
+        archive.extractall(build_dir, filter="data")
+    config = (build_dir / "vendor-config.toml").read_text()
+    assert tomllib.loads(config)["source"]["vendored-sources"]["directory"] == "vendor"
+    assert dependency.as_uri() in config
+    (build_dir / ".cargo").mkdir()
+    (build_dir / ".cargo/config.toml").write_text(config)
+
+    # Remove the Git source and use an empty cache to test the archive alone.
+    shutil.rmtree(dependency_root)
+    monkeypatch.setenv("CARGO_HOME", str(tmp_path / "offline-cargo-home"))
+    result = subprocess.run(
+        ["cargo", "build", "--frozen"], cwd=build_dir, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr

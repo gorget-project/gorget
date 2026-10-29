@@ -104,6 +104,11 @@ transform:
                                      # only; see combine.py for etcd's case)
 ```
 
+For a single Cargo module without an explicit `name`, the vendor archive contains
+`vendor/` and `vendor-config.toml`. Append `vendor-config.toml` to the build's
+`.cargo/config.toml` after extraction. It redirects registry and Git dependencies
+to the relative `vendor` directory, so an offline build needs no Cargo cache.
+
 For pnpm packages, `offline-cache` defaults to true. Gorget reads the exact
 `pnpm@...` version from `package.json` when present. It also reads an exact
 `devEngines.packageManager` pnpm version. If neither field sets an exact
