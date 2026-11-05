@@ -23,21 +23,41 @@ def make_vars(
 
 
 @pytest.mark.parametrize(
-    ("version", "major", "minor", "patch", "build"),
+    ("version", "major", "minor", "patch", "fourth", "fourth_suffix", "build"),
     [
-        ("1.2.3", "1", "2", "3", ""),
-        ("1.2", "1", "2", "", ""),
-        ("1", "1", "", "", ""),
-        ("1.2.3.4", "1", "2", "3", ""),
-        ("17.0.21.0.6", "17", "0", "21", "6"),
+        ("1.2.3", "1", "2", "3", "", "", ""),
+        ("1.2", "1", "2", "", "", "", ""),
+        ("1", "1", "", "", "", "", ""),
+        ("1.2.3.4", "1", "2", "3", "4", ".4", ""),
+        ("17.0.20.0.8", "17", "0", "20", "0", "", "8"),
+        ("17.0.21.1.0", "17", "0", "21", "1", ".1", "0"),
     ],
 )
-def test_version_component_derivation(version, major, minor, patch, build):
+def test_version_component_derivation(version, major, minor, patch, fourth, fourth_suffix, build):
     v = make_vars(version=version)
     assert v.version_major == major
     assert v.version_minor == minor
     assert v.version_patch == patch
+    assert v.version_fourth == fourth
+    assert v.version_fourth_suffix == fourth_suffix
     assert v.version_build == build
+
+
+@pytest.mark.parametrize(
+    ("version", "tag"),
+    [
+        ("17.0.20.0.8", "jdk-17.0.20+8"),
+        ("17.0.21.1.0", "jdk-17.0.21.1+0"),
+    ],
+)
+def test_openjdk_git_ref_and_archive_name_keep_optional_fourth_component(version, tag):
+    variables = make_vars(version=version)
+    template = (
+        "jdk-${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+        "${VERSION_FOURTH_SUFFIX}+${VERSION_BUILD}"
+    )
+    assert substitute_string(template, variables) == tag
+    assert substitute_string(f"{template}.tar.gz", variables) == f"{tag}.tar.gz"
 
 
 def test_substitute_string_replaces_all_known_tokens():

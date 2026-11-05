@@ -577,9 +577,17 @@ using the same distinctly named binary pattern Fedora already uses for
 
 ## Variable substitution
 
-`${VERSION}`, `${VERSION_MAJOR}`, `${VERSION_MINOR}`, `${VERSION_PATCH}`, `${VERSION_BUILD}`,
+`${VERSION}`, `${VERSION_MAJOR}`, `${VERSION_MINOR}`, `${VERSION_PATCH}`,
+`${VERSION_FOURTH}`, `${VERSION_FOURTH_SUFFIX}`, `${VERSION_BUILD}`,
 `${OLD_VERSION}`, `${PACKAGE}`, `${SPEC_FILE}`, `${PACKAGE_DIR}`,
 `${UPSTREAM_REPO}` are available in any string value in the pipeline YAML.
+
+- `${VERSION_FOURTH}` is the fourth dot-separated component of `${VERSION}`
+  (empty if absent). `${VERSION_FOURTH_SUFFIX}` includes its leading dot, or
+  is empty when the fourth component is absent or `0`. For an OpenJDK ref,
+  `jdk-${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}${VERSION_FOURTH_SUFFIX}+${VERSION_BUILD}`
+  maps `17.0.20.0.8` to `jdk-17.0.20+8` and `17.0.21.1.0` to
+  `jdk-17.0.21.1+0`.
 
 - `${PACKAGE_DIR}` is the absolute path to the package's directory (i.e.
   `--package-dir`) -- useful in `run:` step scripts that need to reach files

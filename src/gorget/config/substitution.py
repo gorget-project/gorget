@@ -1,6 +1,4 @@
-"""Variable substitution: ${VERSION}, ${VERSION_MAJOR}, ${VERSION_MINOR},
-${VERSION_PATCH}, ${VERSION_BUILD}, ${OLD_VERSION}, ${PACKAGE}, ${SPEC_FILE},
-${PACKAGE_DIR}, ${UPSTREAM_REPO}.
+"""Variable substitution for pipeline YAML values.
 
 Substitution runs once, on the raw dict/list/string tree produced by the YAML
 loader, before it's turned into `PipelineSpec` dataclasses -- so the schema module
@@ -43,6 +41,15 @@ class SubstitutionVars:
         return self._part(2)
 
     @property
+    def version_fourth(self) -> str:
+        return self._part(3)
+
+    @property
+    def version_fourth_suffix(self) -> str:
+        fourth = self.version_fourth
+        return f".{fourth}" if fourth and fourth != "0" else ""
+
+    @property
     def version_build(self) -> str:
         """Return the fifth dot-separated version component, if present.
 
@@ -59,6 +66,8 @@ class SubstitutionVars:
             "VERSION_MAJOR": self.version_major,
             "VERSION_MINOR": self.version_minor,
             "VERSION_PATCH": self.version_patch,
+            "VERSION_FOURTH": self.version_fourth,
+            "VERSION_FOURTH_SUFFIX": self.version_fourth_suffix,
             "VERSION_BUILD": self.version_build,
             "OLD_VERSION": self.old_version or "",
             "PACKAGE": self.package,
