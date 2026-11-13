@@ -67,6 +67,31 @@ selectors. If the project declares `yarnPath`, Node invokes that checked-in
 release. A later Yarn vendor step copies the generated lockfile and offline-cache
 settings into Source0. Generated caches remain in the vendor archive.
 
+For Yarn Berry projects with parallel dependency majors, qualify the target
+with an npm version range to update only matching resolved copies:
+
+```yaml
+transform:
+  - type: vendor-bump
+    ecosystem: yarn
+    pins:
+      - dependency: joi@^17
+        version: "~17.13.9"
+      - dependency: joi@^18
+        version: "~18.3.1"
+```
+
+Scoped names work too, for example `@scope/package@^2`. Gorget expands matching
+lockfile descriptors and existing resolutions, preserves unrelated branches,
+and validates the result. An absent branch stays absent.
+
+When a forced child-major update conflicts with a registry parent's dependency
+requirement, Gorget queries that parent's latest same-major release using
+`yarn npm info`, honoring Yarn's registry and authentication settings. It adds
+the parent update only if that release accepts every requested child update;
+otherwise it fails rather than crossing the parent's major. Same-major child
+updates continue to use the explicit override without a parent metadata query.
+
 Minimum-version checks include older transitive copies. A newer copy does not
 make a vulnerable older copy acceptable. Cargo can reject a requested update if
 transitive requirements conflict with it. Review application compatibility when
