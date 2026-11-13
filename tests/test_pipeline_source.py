@@ -181,3 +181,28 @@ def test_metadata_edit_preserves_relative_sibling_dependencies(tmp_path):
     assert (tmp_path / "module/lock").read_text() == "new metadata"
     assert (tmp_path / "sibling/dependency").read_text() == "local dependency"
     assert source.dirty
+
+
+
+def test_archive_metadata_edits_are_reproducible_despite_edit_times(tmp_path):
+    import os
+
+    root = tmp_path / "original"
+    root.mkdir()
+    (root / "pom.xml").write_text("old requirement")
+    archive = tmp_path / "source.tar.gz"
+    make_tar_gz(root, archive, arcname="project", mtime=1700000000)
+    parent = build_input_artifact(archive, archive.name, "upstream", False)
+    revisions = []
+    for index, timestamp in enumerate((1800000000, 1900000000)):
+        work = tmp_path / str(index)
+        source = SourceWorkspace()
+        tree = source.materialize(work, [parent])
+        manifest = tree / "project/pom.xml"
+        manifest.write_text("new requirement")
+        os.utime(manifest, (timestamp, timestamp))
+        source.mark_dirty()
+        revision = source.commit(work, dry_run=False)
+        assert revision is not None
+        revisions.append(revision.path.read_bytes())
+    assert revisions[0] == revisions[1]

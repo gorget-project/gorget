@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import tarfile
 import tempfile
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -188,7 +189,11 @@ class SourceWorkspace:
                 mtime=commit_timestamp(self.path),
             )
         else:
-            repack_tar_gz(self.path, destination)
+            # Metadata edits have current mtimes. Retain the input archive's
+            # timestamp so identical dependency updates produce identical bytes.
+            with tarfile.open(parent.path) as archive:
+                mtime = int(max((m.mtime for m in archive if m.isfile()), default=0))
+            repack_tar_gz(self.path, destination, mtime=mtime)
 
         derived = build_derived_artifact(
             destination,
