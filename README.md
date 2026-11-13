@@ -498,6 +498,26 @@ on, so the provides reflect any `vendor-bump` edits made earlier in the
 pipeline. Versions are normalised to RPM form (a semver pre-release
 `1.2.3-rc.1` becomes `1.2.3~rc.1`).
 
+For Maven, select shipped JAR directories with `modules`, or assembled
+publication archives with `artifacts`. Coordinates come from JAR
+`META-INF/maven/*/pom.properties`; an optional vendor-repository artifact supplies
+coordinates by SHA-256 match for JARs without that metadata. The repository is
+only a lookup source: build-only dependencies are not reported.
+
+```yaml
+post:
+  - type: bundled-provides
+    ecosystem: maven
+    artifacts: ["application-${VERSION}-bin.tar.gz"]
+    repository: application-vendor.tar.gz  # optional vendor artifact
+    exclude: ["org.example.application:*"]
+    output: bundled-maven-provides.inc
+```
+
+Maven emits `bundled(mvn(groupId:artifactId))` and preserves Maven version
+qualifiers. Its default output is `bundled-maven-provides.inc`. `exclude` accepts
+coordinate/name glob patterns. Missing coordinates fail the step.
+
 The namespace is deliberately fixed to `bundled(npm(<name>))` for **every** JS
 ecosystem (npm/pnpm/yarn) and is not configurable. npm/pnpm/yarn all resolve
 against the npm registry, so the package name is the stable identifier
