@@ -479,3 +479,9 @@ def test_yarn_vendor_syncs_lock_and_config_but_keeps_cache_separate(tmp_path, mo
     assert not (source_dir / ".yarn/cache").exists()
     with tarfile.open(result.artifacts[0].path) as archive:
         assert "vendor/foo.zip" in archive.getnames()
+
+
+
+def test_pnpm_offline_cache_rejects_empty_module_list(tmp_path):
+    with pytest.raises(GorgetConfigError, match="at least one module"):
+        VendorHandler().run(VendorStep(ecosystem="pnpm", modules=[]), make_ctx(tmp_path))
