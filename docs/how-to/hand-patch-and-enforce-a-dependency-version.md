@@ -67,7 +67,7 @@ selectors. If the project declares `yarnPath`, Node invokes that checked-in
 release. A later Yarn vendor step copies the generated lockfile and offline-cache
 settings into Source0. Generated caches remain in the vendor archive.
 
-For Yarn Berry projects with parallel dependency majors, qualify the target
+For npm, pnpm and Yarn Berry projects with parallel dependency majors, qualify the target
 with an npm version range to update only matching resolved copies:
 
 ```yaml
@@ -81,12 +81,12 @@ transform:
         version: "~18.3.1"
 ```
 
-Scoped names work too, for example `@scope/package@^2`. Gorget expands matching
-lockfile descriptors and existing resolutions, preserves unrelated branches,
-and validates the result. An absent branch stays absent.
+Scoped names work too, for example `@scope/package@^2`. Gorget scopes the ecosystem’s overrides to matching copies, preserves unrelated
+branches, and validates the result. Yarn expands matching lockfile descriptors
+and existing resolutions. An absent branch stays absent.
 
 When a forced child-major update conflicts with a registry parent's dependency
-requirement, Gorget queries that parent's latest same-major release using
+requirement in Yarn Berry, Gorget queries that parent's latest same-major release using
 `yarn npm info`, honoring Yarn's registry and authentication settings. It adds
 the parent update only if that release accepts every requested child update;
 otherwise it fails rather than crossing the parent's major. Same-major child
@@ -96,6 +96,14 @@ Minimum-version checks include older transitive copies. A newer copy does not
 make a vulnerable older copy acceptable. Cargo can reject a requested update if
 transitive requirements conflict with it. Review application compatibility when
 a package-wide constraint crosses a dependency major version.
+
+Cargo bumps update registry requirements across the workspace root and declared
+members before resolving `Cargo.lock`. Inline-table features, renamed crates and
+workspace inheritance are preserved. Select the workspace root as the module path.
+Use a tilde target to keep the fix within a compatible release series.
+
+Maven bumps update a dependency's locally defined version property when present,
+keeping references to that property aligned across dependencies and plugins.
 
 When a package uses `go-vendor-tools.toml` dependency overrides, it can instead
 synchronize the generated module metadata into `Source0` itself:

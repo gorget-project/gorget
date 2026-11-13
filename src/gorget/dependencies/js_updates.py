@@ -1,4 +1,4 @@
-"""Derive required parent co-updates from Yarn's resolved graph."""
+"""Parse JavaScript targets and derive parent co-updates from Yarn's graph."""
 
 from collections.abc import Callable, Sequence
 
@@ -9,14 +9,14 @@ from gorget.dependencies import DependencyInventory
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
 
 
-def yarn_target(dependency: str) -> tuple[str, NpmSpec | None]:
+def js_target(dependency: str) -> tuple[str, NpmSpec | None]:
     name, separator, qualifier = dependency.rpartition("@")
     if not separator or not name:
         return dependency, None
     try:
         return name, NpmSpec(qualifier)
     except ValueError as exc:
-        raise GorgetConfigError(f"Invalid Yarn dependency selector: {dependency}") from exc
+        raise GorgetConfigError(f"Invalid JavaScript dependency selector: {dependency}") from exc
 
 
 def version_floor(constraint: str) -> Version:
@@ -49,7 +49,7 @@ def parent_updates(
     updates: dict[str, VendorBumpEntry] = {}
     candidates: dict[str, dict] = {}
     for pin in pins:
-        name, branch = yarn_target(pin.dependency)
+        name, branch = js_target(pin.dependency)
         target = version_floor(pin.version)
         selected = [copy for copy in inventory.find(name)
                     if branch is None or branch.match(Version(copy.version))]

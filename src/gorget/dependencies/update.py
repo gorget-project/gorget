@@ -16,14 +16,15 @@ from pathlib import Path
 from typing import Protocol
 
 import yaml
-from semantic_version import Version
+from semantic_version import NpmSpec, Version
 
 from gorget.config.schema import ToolchainEntry, VendorBumpEntry
 from gorget.dependencies import DependencyInventory, read_inventory
-from gorget.dependencies.yarn_updates import (
+from gorget.dependencies.cargo_updates import bump_cargo_requirements, cargo_manifests
+from gorget.dependencies.js_updates import (
+    js_target,
     parent_updates,
     version_floor,
-    yarn_target,
 )
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.package_manager import PackageManager, yarn_is_berry
@@ -140,7 +141,7 @@ def _yarn_branch_pins(
     resolutions = manifest.get("resolutions", {})
     expanded: list[VendorBumpEntry] = []
     for entry in pins:
-        name, branch = yarn_target(entry.dependency)
+        name, branch = js_target(entry.dependency)
         if branch is None:
             expanded.append(entry)
             continue
@@ -247,7 +248,9 @@ def _npm_basename(lock_key: str) -> str:
     return lock_key.rsplit("node_modules/", 1)[-1] if "node_modules/" in lock_key else lock_key
 
 
-def _npm_prune_dependents(lock: dict, dependency: str) -> int:
+def _npm_prune_dependents(
+    lock: dict, dependency: str, branch: NpmSpec | None = None,
+) -> int:
     """Remove the target package and its direct dependents from a package-lock.
 
     npm treats an existing lock as authoritative: it won't re-apply a new
@@ -265,7 +268,8 @@ def _npm_prune_dependents(lock: dict, dependency: str) -> int:
         if "node_modules/" not in key:
             continue  # never prune the root or a workspace member
         if _npm_basename(key) == dependency:
-            to_remove.append(key)
+            if branch is None or branch.match(Version(meta["version"])):
+                to_remove.append(key)
             continue
         deps: dict = {}
         for field in _DEP_FIELDS:
@@ -312,18 +316,29 @@ class _NpmPin(_SequentialPins):
         if not package_json.is_file():
             raise GorgetConfigError(f"vendor-bump: no package.json found in {module_dir}")
 
+        name, branch = js_target(entry.dependency)
         specifier = _specifier(entry.version)
+        if branch is not None:
+            if not branch.match(version_floor(entry.version)):
+                raise GorgetConfigError(
+                    f"{entry.version} is outside {entry.dependency}'s version range"
+                )
+            specifier += f" {entry.dependency.rpartition('@')[2]}"
         data = json.loads(package_json.read_text())
+        lockfile = module_dir / "package-lock.json"
+        lock = json.loads(lockfile.read_text()) if lockfile.is_file() else {}
+        direct_version = lock.get("packages", {}).get(f"node_modules/{name}", {}).get("version")
+        reconcile_direct = branch is None or bool(
+            direct_version and branch.match(Version(direct_version))
+        )
         for key in ("dependencies", "devDependencies"):
-            if key in data and entry.dependency in data[key]:
-                data[key][entry.dependency] = specifier
+            if reconcile_direct and key in data and name in data[key]:
+                data[key][name] = specifier
         _set_nested(data, ("overrides",), entry.dependency, specifier)
         package_json.write_text(json.dumps(data, indent=2) + "\n")
 
-        lockfile = module_dir / "package-lock.json"
         if lockfile.is_file():
-            lock = json.loads(lockfile.read_text())
-            _npm_prune_dependents(lock, entry.dependency)
+            _npm_prune_dependents(lock, name, branch)
             lockfile.write_text(json.dumps(lock, indent=2) + "\n")
 
     def _resolve(self, module_dir: Path, toolchain: Sequence[ToolchainEntry]) -> None:
@@ -371,12 +386,19 @@ class _PnpmPin(_SequentialPins):
         if not package_json.is_file():
             raise GorgetConfigError(f"vendor-bump: no package.json found in {module_dir}")
 
+        name, branch = js_target(entry.dependency)
         specifier = _specifier(entry.version)
+        if branch is not None:
+            if not branch.match(version_floor(entry.version)):
+                raise GorgetConfigError(
+                    f"{entry.version} is outside {entry.dependency}'s version range"
+                )
+            specifier += f" {entry.dependency.rpartition('@')[2]}"
         data = json.loads(package_json.read_text())
         reconciled = False
         for key in ("dependencies", "devDependencies"):
-            if key in data and entry.dependency in data[key]:
-                data[key][entry.dependency] = specifier
+            if branch is None and key in data and name in data[key]:
+                data[key][name] = specifier
                 reconciled = True
         if reconciled:
             package_json.write_text(json.dumps(data, indent=2) + "\n")
@@ -404,18 +426,9 @@ class _CargoPin(_SequentialPins):
     def apply(
         self, module_dir: Path, entry: VendorBumpEntry, toolchain: Sequence[ToolchainEntry]
     ) -> None:
-        cargo_toml = module_dir / "Cargo.toml"
-        if not cargo_toml.is_file():
-            raise GorgetConfigError(f"vendor-bump: no Cargo.toml found in {module_dir}")
-
-        specifier = _specifier(entry.version)
-        text = cargo_toml.read_text()
-        pattern = re.compile(rf'^(\s*{re.escape(entry.dependency)}\s*=\s*")[^"]*(")', re.MULTILINE)
-        new_text, count = pattern.subn(rf"\g<1>{specifier}\g<2>", text)
-        if count > 0:
+        if bump_cargo_requirements(module_dir, entry.dependency, _specifier(entry.version)):
             # Direct dependency: bump its declared requirement, then let Cargo
             # re-resolve it in the lockfile.
-            cargo_toml.write_text(new_text)
             cmd = ["cargo", "update", "-p", entry.dependency]
         else:
             # Transitive dependency: Cargo has no override mechanism, so pin the
@@ -462,12 +475,13 @@ class _MavenPin(_SequentialPins):
         managed = root.findall(
             f"{prefix}dependencyManagement/{prefix}dependencies/{prefix}dependency"
         )
-        declared = any(
-            child_text(dep, "groupId") == group_id and child_text(dep, "artifactId") == artifact_id
-            for dep in [*direct, *managed]
-        )
+        matching = [
+            dep for dep in [*direct, *managed]
+            if child_text(dep, "groupId") == group_id
+            and child_text(dep, "artifactId") == artifact_id
+        ]
 
-        if not declared:
+        if not matching:
             dependency_management = root.find(f"{prefix}dependencyManagement")
             if dependency_management is None:
                 dependency_management = ET.Element(f"{prefix}dependencyManagement")
@@ -499,6 +513,25 @@ class _MavenPin(_SequentialPins):
             ET.indent(tree, space="  ")
             tree.write(module_dir / "pom.xml", encoding="unicode", xml_declaration=True)
             return
+
+        properties = {
+            match[1] for dep in matching
+            if (match := re.fullmatch(r"\$\{([^}]+)\}", child_text(dep, "version") or ""))
+            and root.find(f"{prefix}properties/{prefix}{match[1]}") is not None
+        }
+        if properties:
+            for name in sorted(properties):
+                result = PackageManager(module_dir, toolchain, runner=run).run([
+                    "mvn", "-N", "versions:set-property", f"-Dproperty={name}",
+                    f"-DnewVersion={version}", "-DgenerateBackupPoms=false",
+                ])
+                if result.returncode != 0:
+                    raise GorgetTransientError(
+                        f"mvn versions:set-property failed in {module_dir}: {result.stderr.strip()}"
+                    )
+            if all(child_text(dep, "version") in {f"${{{p}}}" for p in properties}
+                   for dep in matching):
+                return
 
         cmd = [
             "mvn",
@@ -533,8 +566,10 @@ def update_dependencies(
 ) -> None:
     """Apply a complete pin set and validate every resolved copy afterward."""
     strategy = _STRATEGIES[ecosystem]
-    names = [yarn_target(entry.dependency)[0] if ecosystem == "yarn" else entry.dependency
-             for entry in pins]
+    names = [
+        js_target(entry.dependency)[0] if ecosystem in ("yarn", "npm", "pnpm")
+        else entry.dependency for entry in pins
+    ]
     inventory = read_inventory(
         ecosystem,
         module_dir,
@@ -546,7 +581,7 @@ def update_dependencies(
     requested = pins
     automatic: list[VendorBumpEntry] = []
     if ecosystem == "yarn":
-        if any(yarn_target(entry.dependency)[1] is not None for entry in pins) and not (
+        if any(js_target(entry.dependency)[1] is not None for entry in pins) and not (
             _yarn_is_berry(module_dir)
         ):
             raise GorgetConfigError("Range-qualified Yarn targets require Yarn Berry")
@@ -568,12 +603,24 @@ def update_dependencies(
         for entry in automatic:
             logging.getLogger("gorget.pipeline").info("vendor-bump: co-update %s", entry)
         pins = _yarn_branch_pins([*pins, *automatic], inventory, module_dir)
-    pending = [
-        entry for entry in pins
-        if isinstance(entry, _YarnSelectorPin)
-        or not inventory.find(entry.dependency)
-        or inventory.violations(entry.dependency, entry.version)
-    ]
+    def needs_update(entry: VendorBumpEntry) -> bool:
+        if isinstance(entry, _YarnSelectorPin):
+            return True
+        name, branch = js_target(entry.dependency) if ecosystem in ("yarn", "npm", "pnpm") else (
+            entry.dependency, None
+        )
+        copies = inventory.find(name)
+        if branch is not None:
+            if not branch.match(version_floor(entry.version)):
+                raise GorgetConfigError(f"{entry.version} is outside {entry.dependency}'s range")
+            copies = tuple(copy for copy in copies if branch.match(Version(copy.version)))
+            if not copies:
+                return False
+        return not copies or bool(DependencyInventory(
+            inventory.ecosystem, inventory.workspace, copies,
+        ).violations(name, entry.version))
+
+    pending = [entry for entry in pins if needs_update(entry)]
     if not pending:
         return
     strategy.apply_many(module_dir, pending, toolchain)
@@ -581,7 +628,7 @@ def update_dependencies(
         ecosystem, module_dir, names, toolchain=toolchain, runner=run, use_workspace=False,
     )
     for entry in [*requested, *automatic]:
-        name, branch = yarn_target(entry.dependency) if ecosystem == "yarn" else (
+        name, branch = js_target(entry.dependency) if ecosystem in ("yarn", "npm", "pnpm") else (
             entry.dependency, None
         )
         copies = resolved.find(name)
@@ -606,5 +653,8 @@ def update_dependencies(
             )
 
 
-def update_source_files(ecosystem: str) -> tuple[str, ...]:
+def update_source_files(ecosystem: str, module_dir: Path | None = None) -> tuple[str, ...]:
+    if ecosystem == "cargo" and module_dir is not None:
+        return ("Cargo.lock", *(str(path.relative_to(module_dir.resolve()))
+                                for path in cargo_manifests(module_dir)))
     return _STRATEGIES[ecosystem].source_files

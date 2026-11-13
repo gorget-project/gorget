@@ -13,10 +13,13 @@ class VendorBumpHandler:
         if ctx.dry_run:
             return
         ensure_source_dir(ctx, state)
+        assert state.source.path is not None
         paths = [
             Path(module.path) / filename
             for module in step.modules
-            for filename in update_source_files(step.ecosystem)
+            for filename in update_source_files(
+                step.ecosystem, state.source.path / module.path,
+            )
         ]
         with state.source.edit_metadata(paths) as tree:
             for module in step.modules:

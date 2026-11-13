@@ -732,3 +732,127 @@ def test_grafana_go_security_floors_preserve_newer_upstream_versions(
     runner.assert_called_once()
     assert (source / "go.mod").read_text() == original
     assert state.source.dirty is False
+
+
+@pytest.mark.parametrize("ecosystem", ["npm", "pnpm"])
+def test_js_range_target_preserves_other_majors(tmp_path, mocker, ecosystem):
+    import yaml
+
+    from gorget.dependencies.update import update_dependencies
+
+    (tmp_path / "package.json").write_text('{"dependencies":{"parent":"1.0.0"}}')
+    def lock(version):
+        if ecosystem == "npm":
+            return json.dumps({"packages": {
+                "node_modules/nanoid": {"version": version},
+                "node_modules/other/node_modules/nanoid": {"version": "5.1.0"},
+            }})
+        return yaml.safe_dump({"snapshots": {f"nanoid@{version}": {}, "nanoid@5.1.0": {}}})
+    filename = "package-lock.json" if ecosystem == "npm" else "pnpm-lock.yaml"
+    (tmp_path / filename).write_text(lock("3.3.8"))
+
+    def resolve(args, **kwargs):
+        if ecosystem == "npm":
+            data = json.loads((tmp_path / "package.json").read_text())
+            # The unrelated branch stays locked during targeted pruning.
+            pruned = json.loads((tmp_path / filename).read_text())["packages"]
+            assert pruned == {"node_modules/other/node_modules/nanoid": {"version": "5.1.0"}}
+        else:
+            data = yaml.safe_load((tmp_path / "pnpm-workspace.yaml").read_text())
+        assert data["overrides"] == {"nanoid@^3": "~3.3.12 ^3"}
+        (tmp_path / filename).write_text(lock("3.3.12"))
+        return _ok()
+
+    runner = mocker.patch("gorget.dependencies.update.run", side_effect=resolve)
+    update_dependencies(ecosystem, tmp_path, [
+        VendorBumpEntry(dependency="nanoid@^3", version="~3.3.12"),
+    ])
+    runner.assert_called_once()
+    assert "5.1.0" in (tmp_path / filename).read_text()
+
+
+@pytest.mark.parametrize("direct,expected", [("3.3.8", "~3.3.12 ^3"), ("5.1.0", "5.1.0")])
+def test_npm_range_override_reconciles_only_a_matching_direct_dependency(
+    tmp_path, direct, expected,
+):
+    (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"nanoid": direct}}))
+    (tmp_path / "package-lock.json").write_text(json.dumps({
+        "packages": {"node_modules/nanoid": {"version": direct}},
+    }))
+    _NPM._edit(tmp_path, VendorBumpEntry(dependency="nanoid@^3", version="~3.3.12"))
+    data = json.loads((tmp_path / "package.json").read_text())
+    assert data["dependencies"]["nanoid"] == expected
+    assert data["overrides"] == {"nanoid@^3": "~3.3.12 ^3"}
+
+
+
+def test_maven_bump_updates_shared_version_property_instead_of_a_literal(tmp_path, mocker):
+    (tmp_path / "pom.xml").write_text(
+        '<project><properties><asmVersion>9.9.1</asmVersion></properties>'
+        '<dependencyManagement><dependencies><dependency>'
+        '<groupId>org.ow2.asm</groupId><artifactId>asm</artifactId>'
+        '<version>${asmVersion}</version></dependency></dependencies></dependencyManagement>'
+        '</project>'
+    )
+    runner = mocker.patch("gorget.dependencies.update.run", return_value=_ok())
+    _MavenPin().apply(tmp_path, VendorBumpEntry(dependency="org.ow2.asm:asm", version="9.11.1"), [])
+    assert runner.call_args.args[0] == [
+        "mvn", "-N", "versions:set-property", "-Dproperty=asmVersion",
+        "-DnewVersion=9.11.1", "-DgenerateBackupPoms=false",
+    ]
+
+
+def test_cargo_workspace_bump_persists_member_and_shared_requirements(tmp_path, mocker):
+    source = tmp_path / "src"
+    source.mkdir()
+    root = ('[workspace]\nmembers = ["crates/*"]\nexclude = ["crates/excluded"]\n'
+            '[workspace.dependencies]\n# Keep shared features\n'
+            'russh = { version = "0.62", features = ["ring"] }\n')
+    (source / "Cargo.toml").write_text(root)
+    for name in ("a", "b", "excluded"):
+        member = source / "crates" / name
+        member.mkdir(parents=True)
+        (member / "Cargo.toml").write_text('[dependencies]\nrussh = "0.62" # security target\n')
+    inherited = source / "crates" / "inherited"
+    inherited.mkdir()
+    (inherited / "Cargo.toml").write_text('[dependencies]\nrussh = { workspace = true }\n')
+    def lock(version):
+        return f'[[package]]\nname = "russh"\nversion = "{version}"\n'
+    (source / "Cargo.lock").write_text(lock("0.62.0"))
+
+    def resolve(args, cwd=None, **kwargs):
+        assert args == ["cargo", "update", "-p", "russh"]
+        (cwd / "Cargo.lock").write_text(lock("0.63.3"))
+        return _ok()
+
+    mocker.patch("gorget.dependencies.update.run", side_effect=resolve)
+    state = make_state(tmp_path)
+    VendorBumpHandler().run(VendorBumpStep(ecosystem="cargo", pins=[
+        VendorBumpEntry(dependency="russh", version="~0.63.3"),
+    ]), make_ctx(tmp_path, source), state)
+    tree = state.source.path
+    assert tree is not None
+    assert 'version = "~0.63.3", features = ["ring"]' in (tree / "Cargo.toml").read_text()
+    for name in ("a", "b"):
+        assert 'russh = "~0.63.3" # security target' in (
+            tree / "crates" / name / "Cargo.toml"
+        ).read_text()
+    assert 'russh = "0.62"' in (tree / "crates/excluded/Cargo.toml").read_text()
+    assert 'workspace = true' in (tree / "crates/inherited/Cargo.toml").read_text()
+    assert state.source.dirty
+
+
+
+def test_cargo_renamed_target_dependency_keeps_features_and_local_sources(tmp_path):
+    from gorget.dependencies.cargo_updates import bump_cargo_requirements
+
+    (tmp_path / "Cargo.toml").write_text(
+        '[target.\'cfg(unix)\'.dependencies]\n'
+        'ssh = { package = "russh", version = "0.62", features = ["ring"] }\n'
+        '[dev-dependencies]\n'
+        'russh = { path = "local-russh", version = "0.62" }\n'
+    )
+    assert bump_cargo_requirements(tmp_path, "russh", "~0.63.3")
+    text = (tmp_path / "Cargo.toml").read_text()
+    assert 'package = "russh", version = "~0.63.3", features = ["ring"]' in text
+    assert 'path = "local-russh", version = "0.62"' in text

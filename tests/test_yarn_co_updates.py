@@ -4,7 +4,7 @@ import pytest
 
 from gorget.config.schema import VendorBumpEntry
 from gorget.dependencies import DependencyCopy, DependencyInventory
-from gorget.dependencies.yarn_updates import parent_updates
+from gorget.dependencies.js_updates import parent_updates
 from gorget.exceptions import GorgetTransientError
 
 
