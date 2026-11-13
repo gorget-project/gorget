@@ -26,6 +26,7 @@ parsing, variable substitution, the stage pipeline, and a minimal Emit).
 - [Maven bump and offline vendor example](examples/maven-pipeline-demo/)
 - [Add a policy check to an existing pipeline](docs/how-to/add-a-policy-check.md)
 - [Add a post: step to refresh generated metadata](docs/how-to/add-a-post-step.md)
+- [Generate Grafana dependencies with native steps](docs/how-to/update-grafana-dependencies.md)
 - [Fetch a source whose URL you don't know until runtime](docs/how-to/discover-additional-sources.md)
 - [Fetch from a private git repo](docs/how-to/fetch-from-a-private-repo.md)
 - [Debug a failing pipeline locally](docs/how-to/debug-a-failing-pipeline.md)

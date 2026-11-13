@@ -647,3 +647,88 @@ def test_node_pin_set_resolves_once_after_all_manifest_edits(tmp_path, mocker, e
         [],
     )
     assert runner.call_count == 1
+
+
+def test_yarn_range_target_expands_all_matching_descriptors(tmp_path):
+    from gorget.dependencies import DependencyCopy, DependencyInventory
+    from gorget.dependencies.update import _yarn_branch_pins
+
+    (tmp_path / "package.json").write_text(json.dumps({
+        "resolutions": {"joi@npm:^17.11.0": "17.13.8"},
+    }))
+    inventory = DependencyInventory("yarn", tmp_path, (
+        DependencyCopy("joi", "17.13.8", "joi@npm:17.13.8, joi@npm:^17.12.0"),
+        DependencyCopy("joi", "18.2.1", "joi@npm:^18.2.1"),
+    ))
+    pins = _yarn_branch_pins(
+        [VendorBumpEntry(dependency="joi@^17", version="~17.13.9")], inventory, tmp_path,
+    )
+    assert {pin.selector for pin in pins} == {
+        "joi@npm:17.13.8", "joi@npm:^17.12.0", "joi@npm:^17.11.0",
+    }
+    assert all(pin.dependency == "joi" for pin in pins)
+    manifest = tmp_path / "package.json"
+    for pin in pins:
+        _YARN._edit(tmp_path, pin)
+    assert json.loads(manifest.read_text())["resolutions"] == {
+        "joi@npm:17.13.8": "~17.13.9 ^17",
+        "joi@npm:^17.12.0": "~17.13.9 ^17",
+        "joi@npm:^17.11.0": "~17.13.9 ^17",
+    }
+
+
+def test_yarn_range_target_for_scoped_package_and_absent_branch(tmp_path):
+    from gorget.dependencies import DependencyCopy, DependencyInventory
+    from gorget.dependencies.update import _yarn_branch_pins
+
+    (tmp_path / "package.json").write_text("{}")
+    inventory = DependencyInventory("yarn", tmp_path, (
+        DependencyCopy("@scope/lib", "2.1.0", "@scope/lib@npm:^2"),
+    ))
+    pins = _yarn_branch_pins([
+        VendorBumpEntry(dependency="@scope/lib@^2", version="2.2.0"),
+        VendorBumpEntry(dependency="@scope/lib@^1", version="1.9.0"),
+    ], inventory, tmp_path)
+    assert len(pins) == 1
+    assert pins[0].dependency == "@scope/lib"
+    assert pins[0].selector == "@scope/lib@npm:^2"
+
+
+def test_yarn_range_target_rejects_out_of_branch_version(tmp_path):
+    from gorget.dependencies import DependencyInventory
+    from gorget.dependencies.update import _yarn_branch_pins
+
+    (tmp_path / "package.json").write_text("{}")
+    with pytest.raises(GorgetConfigError, match="outside"):
+        _yarn_branch_pins(
+            [VendorBumpEntry(dependency="joi@^17", version="18.3.1")],
+            DependencyInventory("yarn", tmp_path, ()), tmp_path,
+        )
+
+
+@pytest.mark.parametrize("dependency,minimum,current", [
+    ("github.com/getkin/kin-openapi", "v0.149.0", "v0.151.0"),
+    ("github.com/klauspost/compress", "v1.20.2", "v1.21.0"),
+])
+def test_grafana_go_security_floors_preserve_newer_upstream_versions(
+    tmp_path, mocker, dependency, minimum, current,
+):
+    source = tmp_path / "src"
+    source.mkdir()
+    original = f"module grafana.example\n\nrequire {dependency} {current}\n"
+    (source / "go.mod").write_text(original)
+
+    def query(args, cwd=None, env=None):
+        assert args == ["go", "list", "-m", dependency]
+        return subprocess.CompletedProcess(args, 0, f"{dependency} {current}\n", "")
+
+    runner = mocker.patch("gorget.dependencies.update.run", side_effect=query)
+    state = make_state(tmp_path)
+    VendorBumpHandler().run(
+        VendorBumpStep(ecosystem="go", pins=[
+            VendorBumpEntry(dependency=dependency, version=minimum),
+        ]), make_ctx(tmp_path, source), state,
+    )
+    runner.assert_called_once()
+    assert (source / "go.mod").read_text() == original
+    assert state.source.dirty is False

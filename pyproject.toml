@@ -12,6 +12,7 @@ license = { file = "LICENSE" }
 dependencies = [
     "PyYAML>=6.0",
     "requests>=2.31",
+    "semantic-version>=2.10",
 ]
 
 [project.optional-dependencies]
