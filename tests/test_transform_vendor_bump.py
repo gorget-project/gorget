@@ -856,3 +856,28 @@ def test_cargo_renamed_target_dependency_keeps_features_and_local_sources(tmp_pa
     text = (tmp_path / "Cargo.toml").read_text()
     assert 'package = "russh", version = "~0.63.3", features = ["ring"]' in text
     assert 'path = "local-russh", version = "0.62"' in text
+
+
+
+@pytest.mark.parametrize("declared,expected", [(None, "pnpm@11.28.11"),
+                                             ("pnpm@12.1.0", "pnpm@12.1.0")])
+def test_pnpm_fallback_manager_is_recorded_without_overriding_upstream(
+    tmp_path, mocker, declared, expected,
+):
+    source = tmp_path / "src"
+    source.mkdir()
+    data = {"name": "application"}
+    if declared:
+        data["packageManager"] = declared
+    (source / "package.json").write_text(json.dumps(data))
+    (source / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+    state = make_state(tmp_path)
+    runner = mocker.patch("gorget.dependencies.update.run")
+    VendorBumpHandler().run(VendorBumpStep(
+        ecosystem="pnpm", package_manager_version="11.28.11",
+        pins=[VendorBumpEntry(dependency="absent@^1", version="~1.2.3")],
+    ), make_ctx(tmp_path, source), state)
+    assert state.source.path is not None
+    manifest = json.loads((state.source.path / "package.json").read_text())
+    assert manifest["packageManager"] == expected
+    runner.assert_not_called()  # An absent dependency branch remains absent.

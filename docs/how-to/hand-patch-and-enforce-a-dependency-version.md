@@ -97,6 +97,11 @@ make a vulnerable older copy acceptable. Cargo can reject a requested update if
 transitive requirements conflict with it. Review application compatibility when
 a package-wide constraint crosses a dependency major version.
 
+pnpm bumps use the project's exact `packageManager` declaration and share CLI
+setup with offline vendoring. When upstream omits that declaration, set
+`package-manager-version` on the bump to an exact fallback version; Gorget
+records it in Source0 and preserves any upstream declaration.
+
 Cargo bumps update registry requirements across the workspace root and declared
 members before resolving `Cargo.lock`. Inline-table features, renamed crates and
 workspace inheritance are preserved. Select the workspace root as the module path.

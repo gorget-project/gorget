@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import shutil
+import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from gorget.dependencies.js_updates import (
 )
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.package_manager import PackageManager, yarn_is_berry
+from gorget.pnpm import install_pnpm_cli, resolve_pnpm_version
 from gorget.util.subprocess_run import run
 
 
@@ -412,12 +414,25 @@ class _PnpmPin(_SequentialPins):
         workspace.write_text(yaml.dump(ws_data, default_flow_style=False, sort_keys=False))
 
     def _resolve(self, module_dir: Path, toolchain: Sequence[ToolchainEntry]) -> None:
-        cmd = ["pnpm", "install", "--lockfile-only", "--ignore-scripts"]
-        result = PackageManager(module_dir, toolchain, runner=run).run(cmd)
-        if result.returncode != 0:
-            raise GorgetTransientError(
-                f"pnpm install --lockfile-only failed in {module_dir}: {result.stderr.strip()}"
+        manifest_path = module_dir / "package.json"
+        manifest = json.loads(manifest_path.read_text())
+        with tempfile.TemporaryDirectory(prefix="gorget-pnpm-bump-") as temporary:
+            command = ["pnpm"]
+            if (manifest.get("packageManager")
+                    or manifest.get("devEngines", {}).get("packageManager")):
+                version = resolve_pnpm_version(
+                    manifest, manifest_path, module_dir, toolchain, runner=run,
+                )
+                command = install_pnpm_cli(
+                    Path(temporary) / ".pnpm", module_dir, version, toolchain, runner=run,
+                )
+            result = PackageManager(module_dir, toolchain, runner=run).run(
+                [*command, "install", "--lockfile-only", "--ignore-scripts"]
             )
+            if result.returncode != 0:
+                raise GorgetTransientError(
+                    f"pnpm install --lockfile-only failed in {module_dir}: {result.stderr.strip()}"
+                )
 
 
 class _CargoPin(_SequentialPins):
