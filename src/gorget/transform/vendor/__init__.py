@@ -64,11 +64,8 @@ class VendorHandler:
                 raise GorgetConfigError("offline-cache is only supported for ecosystem: pnpm")
             if step.sync_go_modules:
                 raise GorgetConfigError("offline-cache cannot be combined with sync-go-modules")
-            if len(step.modules) != 1:
-                raise GorgetConfigError(
-                    "pnpm offline-cache requires exactly one module; set "
-                    "offline-cache: false for store-only multi-module vendoring"
-                )
+            if not step.modules:
+                raise GorgetConfigError("pnpm offline-cache requires at least one module")
             if not ctx.dry_run:
                 if ctx.source_dir is None:
                     raise GorgetConfigError(
@@ -81,6 +78,7 @@ class VendorHandler:
                     ctx.toolchain,
                     step.platforms or (),
                     step.metadata_packages,
+                    additional_modules=[ctx.source_dir / m.path for m in step.modules[1:]],
                 )
             artifact = build_derived_artifact(
                 archive_path, archive_name, "vendor:pnpm offline-cache", ctx.dry_run

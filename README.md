@@ -120,7 +120,8 @@ integrity hashes, so the install can fetch package contents without asking the
 registry for every package's full version catalog. The archive contains
 `.pnpm`, `.pnpm-store`, and `.pnpm-cache` at its root. Gorget runs the install
 once per declared platform with pnpm 10.14 or later. Older pnpm versions use
-`--force` to fetch optional packages for all platforms. This mode requires one module. Set
+`--force` to fetch optional packages for all platforms. Modules in one cache must use the same pnpm version; their packages and metadata
+share the store. Use separate vendor steps for different pnpm versions. Set
 `offline-cache: false` to use the legacy store-only vendor archive.
 Use that opt-out only when the consumer does not need an offline pnpm install.
 Set `metadata-packages:` only for packages whose full registry metadata the
