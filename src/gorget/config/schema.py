@@ -174,6 +174,8 @@ class VendorBumpStep:
     type: Literal["vendor-bump"] = "vendor-bump"
     ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo", "maven"]
     pins: list[VendorBumpEntry] = field(default_factory=list)
+    # pnpm-only fallback when upstream omits an exact packageManager declaration.
+    package_manager_version: str | None = None
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
 
 
