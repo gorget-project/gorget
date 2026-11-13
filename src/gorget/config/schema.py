@@ -100,7 +100,7 @@ class VendorStep:
     ecosystem: Literal[
         "go", "npm", "pnpm", "yarn", "cargo", "composer", "maven", "gradle"
     ]
-    # Gradle-specific task. Other ecosystems ignore this value.
+    # Gradle task or Maven lifecycle goal; other ecosystems ignore this value.
     task: str = "build"
     max_workers: int | None = None
     outputs: list[VendorOutput] = field(default_factory=list)
@@ -313,7 +313,7 @@ class PostRunStep:
 
 @dataclass(frozen=True, kw_only=True)
 class BundledProvidesStep:
-    """Generate an RPM `Provides: bundled(npm(...))` block from lockfiles.
+    """Generate RPM bundled Provides from JS lockfiles or shipped Maven JARs.
 
     Self-contained like the `vendor` step: it declares its own `ecosystem` and
     `modules` and parses the lockfiles under `source_dir/<module.path>` itself
@@ -323,13 +323,23 @@ class BundledProvidesStep:
     """
 
     type: Literal["bundled-provides"] = "bundled-provides"
-    ecosystem: Literal["npm", "pnpm", "yarn"]
+    ecosystem: Literal["npm", "pnpm", "yarn", "maven"]
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
     # "production" drops devDependencies (the usual RPM case -- dev tooling
     # isn't shipped); "all" includes them.
     scope: Literal["production", "all"] = "production"
-    output: str = "bundled-npm-provides.inc"
+    output: str | None = None
     include_workspaces: bool = False
+    # Maven: shipped distribution archives, or modules containing shipped JARs.
+    artifacts: list[str] = field(default_factory=list)
+    # Optional Maven vendor-repository artifact used for coordinate hash lookup.
+    repository: str | None = None
+    exclude: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.output is None:
+            ecosystem = "maven" if self.ecosystem == "maven" else "npm"
+            object.__setattr__(self, "output", f"bundled-{ecosystem}-provides.inc")
 
 
 PostStep = PostRunStep | BundledProvidesStep

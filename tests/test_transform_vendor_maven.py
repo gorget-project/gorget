@@ -45,3 +45,13 @@ def test_maven_vendor_reports_command_failure(tmp_path, mocker):
 
 def test_maven_vendor_has_no_archive_root_files(tmp_path):
     assert MavenVendor().archive_root_files(tmp_path) == []
+
+
+
+def test_maven_package_task_runs_tests_to_fill_the_offline_repository(tmp_path, mocker):
+    (tmp_path / "pom.xml").write_text("<project/>")
+    runner = mocker.patch("gorget.transform.vendor.maven.run", return_value=_completed())
+    repository = MavenVendor().vendor(tmp_path, task="package")
+    assert not repository.is_relative_to(tmp_path)
+    assert runner.call_args.args[0] == ["mvn", "package", f"-Dmaven.repo.local={repository}"]
+    MavenVendor().cleanup(repository)
