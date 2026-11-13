@@ -120,7 +120,8 @@ integrity hashes, so the install can fetch package contents without asking the
 registry for every package's full version catalog. The archive contains
 `.pnpm`, `.pnpm-store`, and `.pnpm-cache` at its root. Gorget runs the install
 once per declared platform with pnpm 10.14 or later. Older pnpm versions use
-`--force` to fetch optional packages for all platforms. This mode requires one module. Set
+`--force` to fetch optional packages for all platforms. Modules in one cache must use the same pnpm version; their packages and metadata
+share the store. Use separate vendor steps for different pnpm versions. Set
 `offline-cache: false` to use the legacy store-only vendor archive.
 Use that opt-out only when the consumer does not need an offline pnpm install.
 Set `metadata-packages:` only for packages whose full registry metadata the
@@ -496,6 +497,26 @@ It reads `package-lock.json` / `pnpm-lock.yaml` / `yarn.lock` from
 on, so the provides reflect any `vendor-bump` edits made earlier in the
 pipeline. Versions are normalised to RPM form (a semver pre-release
 `1.2.3-rc.1` becomes `1.2.3~rc.1`).
+
+For Maven, select shipped JAR directories with `modules`, or assembled
+publication archives with `artifacts`. Coordinates come from JAR
+`META-INF/maven/*/pom.properties`; an optional vendor-repository artifact supplies
+coordinates by SHA-256 match for JARs without that metadata. The repository is
+only a lookup source: build-only dependencies are not reported.
+
+```yaml
+post:
+  - type: bundled-provides
+    ecosystem: maven
+    artifacts: ["application-${VERSION}-bin.tar.gz"]
+    repository: application-vendor.tar.gz  # optional vendor artifact
+    exclude: ["org.example.application:*"]
+    output: bundled-maven-provides.inc
+```
+
+Maven emits `bundled(mvn(groupId:artifactId))` and preserves Maven version
+qualifiers. Its default output is `bundled-maven-provides.inc`. `exclude` accepts
+coordinate/name glob patterns. Missing coordinates fail the step.
 
 The namespace is deliberately fixed to `bundled(npm(<name>))` for **every** JS
 ecosystem (npm/pnpm/yarn) and is not configurable. npm/pnpm/yarn all resolve

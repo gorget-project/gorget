@@ -64,11 +64,8 @@ class VendorHandler:
                 raise GorgetConfigError("offline-cache is only supported for ecosystem: pnpm")
             if step.sync_go_modules:
                 raise GorgetConfigError("offline-cache cannot be combined with sync-go-modules")
-            if len(step.modules) != 1:
-                raise GorgetConfigError(
-                    "pnpm offline-cache requires exactly one module; set "
-                    "offline-cache: false for store-only multi-module vendoring"
-                )
+            if not step.modules:
+                raise GorgetConfigError("pnpm offline-cache requires at least one module")
             if not ctx.dry_run:
                 if ctx.source_dir is None:
                     raise GorgetConfigError(
@@ -81,6 +78,7 @@ class VendorHandler:
                     ctx.toolchain,
                     step.platforms or (),
                     step.metadata_packages,
+                    additional_modules=[ctx.source_dir / m.path for m in step.modules[1:]],
                 )
             artifact = build_derived_artifact(
                 archive_path, archive_name, "vendor:pnpm offline-cache", ctx.dry_run
@@ -136,6 +134,7 @@ class VendorHandler:
                         sync_go_modules=step.sync_go_modules,
                         gradle_task=step.task if step.ecosystem == "gradle" else None,
                         gradle_max_workers=step.max_workers,
+                        maven_task=step.task if step.ecosystem == "maven" else None,
                     )
                     module_outputs.append((module, output))
                 for module in step.modules:
@@ -184,8 +183,8 @@ class VendorHandler:
         if step.max_workers is not None and step.ecosystem != "gradle":
             raise GorgetConfigError("max-workers is only supported for ecosystem: gradle")
         validate_max_workers(step.max_workers)
-        if step.outputs and step.ecosystem != "gradle":
-            raise GorgetConfigError("vendor outputs are only supported for ecosystem: gradle")
+        if step.outputs and step.ecosystem not in ("gradle", "maven"):
+            raise GorgetConfigError("vendor outputs are only supported for gradle or maven")
         names = {archive_name}
         for output in step.outputs:
             if not isinstance(output.path, str) or not isinstance(output.name, str):
@@ -210,7 +209,8 @@ class VendorHandler:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
             artifacts.append(build_derived_artifact(
-                destination, output.name, f"vendor:gradle output:{output.path}", ctx.dry_run
+                destination, output.name, f"vendor:{step.ecosystem} output:{output.path}",
+                ctx.dry_run
             ))
         return artifacts
 
@@ -226,6 +226,7 @@ class VendorHandler:
         sync_go_modules: bool,
         gradle_task: str | None,
         gradle_max_workers: int | None,
+        maven_task: str | None,
     ) -> Path:
         if gradle_task is not None:
             return cast(GradleVendor, ecosystem).vendor(
@@ -236,6 +237,10 @@ class VendorHandler:
                 platforms,
                 task=gradle_task,
                 max_workers=gradle_max_workers,
+            )
+        if maven_task is not None:
+            return ecosystem.vendor(
+                module_dir, toolchain, package_dir, use_workspace, platforms, task=maven_task,
             )
         if sync_go_modules:
             go_vendor = cast(GoVendor, ecosystem)

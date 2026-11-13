@@ -151,3 +151,65 @@ def test_resolve_pnpm_version_rejects_other_manager(tmp_path):
         _resolve_pnpm_version(
             {"packageManager": "yarn@4.1.0"}, tmp_path / "package.json", tmp_path, ()
         )
+
+
+def test_shared_offline_cache_contains_every_module_and_platform(tmp_path, mocker):
+    import json
+    import tarfile
+
+    modules = [tmp_path / "ui", tmp_path / "legacy-ui"]
+    for module in modules:
+        module.mkdir()
+        (module / "package.json").write_text(json.dumps({
+            "name": module.name, "packageManager": "pnpm@11.20.0",
+        }))
+        (module / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+    seen = []
+
+    def run(command, cwd=None, **kwargs):
+        if command[:2] == ["npm", "install"]:
+            prefix = Path(command[command.index("--prefix") + 1])
+            binary = prefix / "node_modules/pnpm/bin/pnpm.mjs"
+            binary.parent.mkdir(parents=True)
+            binary.write_text("// pnpm")
+            (prefix / "node_modules/.bin").mkdir()
+        elif command[-1] == "--version":
+            return subprocess.CompletedProcess(command, 0, "11.20.0\n", "")
+        else:
+            name = json.loads((cwd / "package.json").read_text())["name"]
+            cpu = command[command.index("--cpu") + 1]
+            store = Path(command[command.index("--store-dir") + 1])
+            (store / f"{name}-{cpu}").write_text("verified package")
+            projects = store / "v11/projects"
+            projects.mkdir(parents=True, exist_ok=True)
+            (projects / f"{name}-{cpu}").symlink_to(cwd)
+            seen.append((name, cpu, store))
+        return _ok(command)
+
+    mocker.patch("gorget.transform.vendor.pnpm.run", side_effect=run)
+    archive = tmp_path / "cache.tar.gz"
+    PnpmVendor().offline_cache(modules[0], archive, additional_modules=modules[1:])
+    assert {(name, cpu) for name, cpu, _ in seen} == {
+        (name, cpu) for name in ("ui", "legacy-ui") for cpu in ("x64", "arm64")
+    }
+    assert len({store for _, _, store in seen}) == 1
+    with tarfile.open(archive) as tar:
+        assert {f".pnpm-store/{name}-{cpu}" for name, cpu, _ in seen} <= set(tar.getnames())
+        assert not any("/projects/" in name for name in tar.getnames())
+        tar.extractall(tmp_path / "extracted", filter="data")
+    assert all(not (module / "node_modules").exists() for module in modules)
+
+
+def test_shared_offline_cache_rejects_different_pnpm_versions(tmp_path, mocker):
+    import json
+
+    modules = [tmp_path / "a", tmp_path / "b"]
+    for module, version in zip(modules, ("11.20.0", "12.1.0"), strict=True):
+        module.mkdir()
+        (module / "package.json").write_text(json.dumps({"packageManager": f"pnpm@{version}"}))
+        (module / "pnpm-lock.yaml").touch()
+    runner = mocker.patch("gorget.transform.vendor.pnpm.run")
+    with pytest.raises(GorgetConfigError, match="same pnpm version"):
+        PnpmVendor().offline_cache(modules[0], tmp_path / "cache.tar.gz",
+                                   additional_modules=modules[1:])
+    runner.assert_not_called()
