@@ -6,17 +6,25 @@ legal step type under `transform:`) re-vendors against the updated constraint.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import yaml
+from semantic_version import Version
 
 from gorget.config.schema import ToolchainEntry, VendorBumpEntry
-from gorget.dependencies import read_inventory
+from gorget.dependencies import DependencyInventory, read_inventory
+from gorget.dependencies.yarn_updates import (
+    parent_updates,
+    version_floor,
+    yarn_target,
+)
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.package_manager import PackageManager, yarn_is_berry
 from gorget.util.subprocess_run import run
@@ -118,6 +126,49 @@ def _yarn_install_cmd(module_dir: Path) -> list[str]:
     return ["yarn", "install"]
 
 
+@dataclass(frozen=True, kw_only=True)
+class _YarnSelectorPin(VendorBumpEntry):
+    selector: str
+    resolution: str
+
+
+def _yarn_branch_pins(
+    pins: Sequence[VendorBumpEntry], inventory: DependencyInventory, module_dir: Path,
+) -> list[VendorBumpEntry]:
+    """Expand one name@range target into the current lockfile's descriptors."""
+    manifest = json.loads((module_dir / "package.json").read_text())
+    resolutions = manifest.get("resolutions", {})
+    expanded: list[VendorBumpEntry] = []
+    for entry in pins:
+        name, branch = yarn_target(entry.dependency)
+        if branch is None:
+            expanded.append(entry)
+            continue
+        target = version_floor(entry.version)
+        if not branch.match(target):
+            raise GorgetConfigError(
+                f"{entry.version} is outside {entry.dependency}'s version range"
+            )
+        descriptors: set[str] = set()
+        for copy in inventory.find(name):
+            if not branch.match(Version(copy.version)):
+                continue
+            descriptors.update(
+                descriptor for descriptor in copy.location.split(", ")
+                if "@patch:" not in descriptor
+            )
+            for selector, resolution in resolutions.items():
+                protocol = "" if resolution.startswith(("patch:", "npm:")) else "npm:"
+                if f"{name}@{protocol}{resolution}" in copy.location.split(", "):
+                    descriptors.add(selector)
+        for descriptor in sorted(descriptors):
+            expanded.append(_YarnSelectorPin(
+                dependency=name, version=entry.version, selector=descriptor,
+                resolution=f"{_specifier(entry.version)} {entry.dependency.rpartition('@')[2]}",
+            ))
+    return expanded
+
+
 class _JsPin(_SequentialPins):
     """yarn: force a dependency's version across the whole tree via `resolutions`.
 
@@ -162,20 +213,25 @@ class _JsPin(_SequentialPins):
         if not package_json.is_file():
             raise GorgetConfigError(f"vendor-bump: no package.json found in {module_dir}")
 
-        specifier = _specifier(entry.version)
+        specifier = entry.resolution if isinstance(entry, _YarnSelectorPin) else (
+            _specifier(entry.version)
+        )
         data = json.loads(package_json.read_text())
         # Remove specific Yarn selectors that can override a package-wide floor.
-        if self._overrides_path == ("resolutions",):
+        selector = entry.selector if isinstance(entry, _YarnSelectorPin) else None
+        if self._overrides_path == ("resolutions",) and selector is None:
             resolutions = data.setdefault("resolutions", {})
-            for selector in list(resolutions):
-                if re.fullmatch(rf"(?:.*/)?{re.escape(entry.dependency)}(?:@.*)?", selector):
-                    del resolutions[selector]
+            for existing_selector in list(resolutions):
+                if re.fullmatch(
+                    rf"(?:.*/)?{re.escape(entry.dependency)}(?:@.*)?", existing_selector
+                ):
+                    del resolutions[existing_selector]
         # Reconcile the direct declaration if present (keeps the manifest honest).
         for key in ("dependencies", "devDependencies"):
-            if key in data and entry.dependency in data[key]:
+            if selector is None and key in data and entry.dependency in data[key]:
                 data[key][entry.dependency] = specifier
         # Force every copy (direct + transitive) via the override mechanism.
-        _set_nested(data, self._overrides_path, entry.dependency, specifier)
+        _set_nested(data, self._overrides_path, selector or entry.dependency, specifier)
         package_json.write_text(json.dumps(data, indent=2) + "\n")
 
     def _resolve(self, module_dir: Path, toolchain: Sequence[ToolchainEntry]) -> None:
@@ -477,7 +533,8 @@ def update_dependencies(
 ) -> None:
     """Apply a complete pin set and validate every resolved copy afterward."""
     strategy = _STRATEGIES[ecosystem]
-    names = [entry.dependency for entry in pins]
+    names = [yarn_target(entry.dependency)[0] if ecosystem == "yarn" else entry.dependency
+             for entry in pins]
     inventory = read_inventory(
         ecosystem,
         module_dir,
@@ -486,31 +543,61 @@ def update_dependencies(
         runner=run,
         use_workspace=False,
     )
+    requested = pins
+    automatic: list[VendorBumpEntry] = []
+    if ecosystem == "yarn":
+        if any(yarn_target(entry.dependency)[1] is not None for entry in pins) and not (
+            _yarn_is_berry(module_dir)
+        ):
+            raise GorgetConfigError("Range-qualified Yarn targets require Yarn Berry")
+        def metadata(name: str, constraint: str) -> dict:
+            result = PackageManager(module_dir, toolchain, runner=run).run([
+                "yarn", "npm", "info", f"{name}@{constraint}",
+                "--fields", "version,dependencies,optionalDependencies", "--json",
+            ])
+            if result.returncode != 0:
+                raise GorgetTransientError(f"Yarn metadata lookup failed: {result.stderr.strip()}")
+            records = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+            candidates = [record for record in records if "version" in record]
+            if len(candidates) != 1:
+                raise GorgetTransientError(f"Expected one Yarn metadata record for {name}")
+            return candidates[0]
+
+        if _yarn_is_berry(module_dir):
+            automatic = parent_updates(requested, inventory, metadata)
+        for entry in automatic:
+            logging.getLogger("gorget.pipeline").info("vendor-bump: co-update %s", entry)
+        pins = _yarn_branch_pins([*pins, *automatic], inventory, module_dir)
     pending = [
-        entry
-        for entry in pins
-        if not inventory.find(entry.dependency)
+        entry for entry in pins
+        if isinstance(entry, _YarnSelectorPin)
+        or not inventory.find(entry.dependency)
         or inventory.violations(entry.dependency, entry.version)
     ]
     if not pending:
         return
     strategy.apply_many(module_dir, pending, toolchain)
     resolved = read_inventory(
-        ecosystem,
-        module_dir,
-        names,
-        toolchain=toolchain,
-        runner=run,
-        use_workspace=False,
+        ecosystem, module_dir, names, toolchain=toolchain, runner=run, use_workspace=False,
     )
-    for entry in pins:
-        if not resolved.find(entry.dependency):
+    for entry in [*requested, *automatic]:
+        name, branch = yarn_target(entry.dependency) if ecosystem == "yarn" else (
+            entry.dependency, None
+        )
+        copies = resolved.find(name)
+        if branch is not None:
+            copies = tuple(copy for copy in copies if branch.match(Version(copy.version)))
+            # A removed dependency branch is not reintroduced by a carried pin.
+            if not copies:
+                continue
+        if not copies:
             raise GorgetConfigError(
-                f"vendor-bump: {entry.dependency} is not present in the dependency tree "
+                f"vendor-bump: {name} is not present in the dependency tree "
                 f"at {module_dir} after the bump -- nothing to pin "
                 "(check the dependency name)"
             )
-        failures = resolved.violations(entry.dependency, entry.version)
+        scoped = DependencyInventory(resolved.ecosystem, resolved.workspace, copies)
+        failures = scoped.violations(name, entry.version)
         if failures:
             locations = ", ".join(f"{copy.location}={copy.version}" for copy in failures)
             raise GorgetTransientError(
