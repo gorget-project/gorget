@@ -24,6 +24,10 @@ land a change in the tracked spec file.
 >       - path: "ui"
 > ```
 >
+> pnpm lockfiles may contain multiple YAML documents; Gorget reads all of them.
+> Set `include-workspaces: true` to also list named, versioned non-root pnpm
+> workspace packages shipped with the application.
+>
 > Then in the spec: `%include %{S:N}` (matching the `.inc`'s `SourceN:` entry).
 
 ## 1. Decide what needs regenerating, and mark it with BEGIN/END markers

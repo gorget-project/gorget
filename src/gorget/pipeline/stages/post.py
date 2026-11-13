@@ -69,7 +69,8 @@ class PostStage:
                 "'git' fetch step whose lockfiles this step can read"
             )
         provides = bundled_provides(
-            step.ecosystem, state.source.path, step.modules
+            step.ecosystem, state.source.path, step.modules,
+            include_workspaces=step.include_workspaces,
         )
         # Namespace is bundled(npm(...)) for every JS ecosystem: npm/pnpm/yarn
         # all resolve against the npm registry, matching Fedora's convention.

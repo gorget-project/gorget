@@ -329,6 +329,7 @@ class BundledProvidesStep:
     # isn't shipped); "all" includes them.
     scope: Literal["production", "all"] = "production"
     output: str = "bundled-npm-provides.inc"
+    include_workspaces: bool = False
 
 
 PostStep = PostRunStep | BundledProvidesStep
