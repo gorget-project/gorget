@@ -22,11 +22,27 @@ from gorget.exceptions import GorgetConfigError
 PACKAGE_NAME_RE = re.compile(r"^(?:@[^/@]+/)?[^/@]+$")
 
 
+def read_pnpm_lockfile(lockfile: Path) -> dict:
+    """Merge pnpm's manager and project YAML documents without losing importers."""
+    merged: dict = {}
+    for document in yaml.safe_load_all(lockfile.read_text()):
+        if document is None:
+            continue
+        if not isinstance(document, dict):
+            raise GorgetConfigError(f"pnpm lockfile document is not a mapping: {lockfile}")
+        for key, value in document.items():
+            if key in ("importers", "packages", "snapshots"):
+                section = merged.setdefault(key, {})
+                for name, entry in (value or {}).items():
+                    section[name] = {**section.get(name, {}), **entry}
+            else:
+                merged[key] = value
+    return merged
+
+
 def pnpm_provides(lockfile: Path) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
     """Returns (production, all) sets from pnpm-lock.yaml."""
-    import yaml
-
-    data = yaml.safe_load(lockfile.read_text())
+    data = read_pnpm_lockfile(lockfile)
     if not data:  # empty or whitespace-only lockfile -> nothing bundled
         return set(), set()
     snapshots = data.get("snapshots", {})

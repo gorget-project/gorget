@@ -12,6 +12,7 @@ from gorget.dependencies import (
     bundled_provides,
     read_inventory,
 )
+from gorget.exceptions import GorgetConfigError
 from gorget.policy.base import VendoredModule
 from gorget.policy.vendor_constraints import check_vendor_constraints
 
@@ -102,3 +103,32 @@ def test_maven_inventory_checks_each_resolved_copy(tmp_path):
     inventory = read_inventory("maven", tmp_path, ["org.example:foo"], runner=runner)
     assert len(inventory.find("org.example:foo")) == 2
     assert inventory.violations("org.example:foo", "2.0.0")[0].version == "1.0.0"
+
+
+def test_pnpm_manager_document_and_project_document_share_inventory(tmp_path):
+    (tmp_path / "pnpm-lock.yaml").write_text(
+        "---\nimporters:\n  .:\n    packageManagerDependencies:\n"
+        "      pnpm: {version: 12.1.0}\nsnapshots:\n  pnpm@12.1.0: {}\n"
+        "---\nimporters:\n  .:\n    dependencies:\n      foo: {version: 1.2.3}\n"
+        "  packages/ui:\n    optionalDependencies:\n      bar: {version: 2.0.0}\n"
+        "snapshots:\n  foo@1.2.3:\n    dependencies: {baz: 3.0.0}\n"
+        "  bar@2.0.0: {}\n  baz@3.0.0: {}\n"
+    )
+    member = tmp_path / "packages/ui"
+    member.mkdir(parents=True)
+    (member / "package.json").write_text('{"name":"@example/ui","version":"4.0.0"}')
+    inventory = read_inventory("pnpm", tmp_path)
+    assert inventory.provides(production=True) == {
+        ("foo", "1.2.3"), ("bar", "2.0.0"), ("baz", "3.0.0"),
+    }
+    assert inventory.find("pnpm")[0].production is False
+    provides = bundled_provides("pnpm", tmp_path, [VendorModule()], include_workspaces=True)
+    assert set(provides["production"]) == inventory.provides(production=True) | {
+        ("@example/ui", "4.0.0"),
+    }
+
+
+def test_pnpm_workspace_provides_reject_path_outside_source(tmp_path):
+    (tmp_path / "pnpm-lock.yaml").write_text('importers: {../outside: {}}\n')
+    with pytest.raises(GorgetConfigError, match="escapes"):
+        bundled_provides("pnpm", tmp_path, [VendorModule()], include_workspaces=True)
