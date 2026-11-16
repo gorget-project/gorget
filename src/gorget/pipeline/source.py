@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import tarfile
 import tempfile
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -146,6 +147,23 @@ class SourceWorkspace:
     def mark_dirty(self) -> None:
         self.dirty = True
 
+    @contextmanager
+    def edit_tree(self, work_dir: Path) -> Iterator[Path]:
+        """Publish an isolated source tree only after all edits succeed."""
+        if self.path is None:
+            raise GorgetConfigError("Source edits require an active workspace")
+        work_dir.mkdir(parents=True, exist_ok=True)
+        temporary = Path(tempfile.mkdtemp(prefix="_source-edit-", dir=work_dir))
+        tree = temporary / "source"
+        try:
+            shutil.copytree(self.path, tree, symlinks=True)
+            yield tree
+        except BaseException:
+            shutil.rmtree(temporary)
+            raise
+        self.path = tree
+        self.mark_dirty()
+
     def adopt_filtered_artifact(
         self,
         parent: Artifact,
@@ -188,7 +206,11 @@ class SourceWorkspace:
                 mtime=commit_timestamp(self.path),
             )
         else:
-            repack_tar_gz(self.path, destination)
+            # New installed files have live mtimes. Keep the input archive's
+            # reference timestamp when publishing a transformed source tree.
+            with tarfile.open(parent.path) as archive:
+                mtime = int(max((m.mtime for m in archive if m.isfile()), default=0))
+            repack_tar_gz(self.path, destination, mtime=mtime)
 
         derived = build_derived_artifact(
             destination,

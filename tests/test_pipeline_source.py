@@ -1,3 +1,4 @@
+import os
 import tarfile
 from pathlib import Path
 
@@ -113,6 +114,37 @@ def test_commit_is_deterministic(tmp_path):
         return revision.path.read_bytes()
 
     assert run_once("a.tar.gz") == run_once("b.tar.gz")
+
+
+def test_published_tree_edits_keep_archive_timestamp_and_replace_payload_atomically(tmp_path):
+    original = tmp_path / "original"
+    (original / "package/node_modules/old").mkdir(parents=True)
+    (original / "package/node_modules/old/file").write_text("old")
+    archive = tmp_path / "source.tar.gz"
+    repack_tar_gz(original, archive, mtime=1700000000)
+    parent = build_input_artifact(archive, archive.name, "url", False)
+
+    def publish(name, mtime):
+        source = SourceWorkspace()
+        source.materialize(tmp_path / name, [parent])
+        old_path = source.path
+        with source.edit_tree(tmp_path / name) as tree:
+            (tree / "package/node_modules/old/file").unlink()
+            new = tree / "package/node_modules/new"
+            new.mkdir()
+            (new / "file").write_text("new")
+            os.utime(new / "file", (mtime, mtime))
+        assert source.path != old_path
+        assert (old_path / "package/node_modules/old/file").read_text() == "old"
+        revision = source.commit(tmp_path / name, dry_run=False)
+        assert revision is not None
+        assert "package/node_modules/old/file" not in _members(revision.path)
+        assert _read(revision.path, "package/node_modules/new/file") == "new"
+        with tarfile.open(revision.path) as result:
+            assert {member.mtime for member in result} == {1700000000}
+        return revision.path.read_bytes()
+
+    assert publish("first", 1800000000) == publish("second", 1900000000)
 
 
 def test_source_changes_mark_only_real_changes_dirty(tmp_path):

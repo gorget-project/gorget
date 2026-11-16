@@ -141,7 +141,7 @@ def _reference_mtime(src_dir: Path) -> int:
     return int(max(mtimes)) if mtimes else 0
 
 
-def repack_tar_gz(src_dir: Path, dest: Path) -> None:
+def repack_tar_gz(src_dir: Path, dest: Path, *, mtime: int | None = None) -> None:
     """Tar up `src_dir`'s contents at their own top-level paths (no injected
     `arcname` wrapper like `make_tar_gz`) -- used to repack a tarball after
     stripping paths from it, preserving whatever internal layout it already had.
@@ -155,7 +155,7 @@ def repack_tar_gz(src_dir: Path, dest: Path) -> None:
     """
     kind = compression_kind(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    filter_fn = _normalize_member(_reference_mtime(src_dir))
+    filter_fn = _normalize_member(_reference_mtime(src_dir) if mtime is None else mtime)
     if kind == "gz":
         with open_gzip_tar(dest) as tar:
             for entry in sorted(src_dir.iterdir()):

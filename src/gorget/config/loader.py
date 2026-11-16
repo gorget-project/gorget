@@ -115,6 +115,11 @@ def _parse_transform_step(raw_step: object) -> TransformStep:
     step_cls = TRANSFORM_STEP_TYPES[step_type]
     if step_type == "vendor-bump" and "pins" in step:
         step["pins"] = [VendorBumpEntry(**_snake_case_keys(pin)) for pin in step["pins"]]
+    if step_type == "vendor-bump" and "bundled" in step:
+        if not isinstance(step["bundled"], bool):
+            raise GorgetConfigError("vendor-bump bundled must be a boolean")
+        if step["bundled"] and step.get("ecosystem") != "npm":
+            raise GorgetConfigError("vendor-bump bundled is only supported for npm")
     if "modules" in step:
         step["modules"] = [VendorModule(**_snake_case_keys(mod)) for mod in step["modules"]]
     if step_type == "vendor" and "outputs" in step:
