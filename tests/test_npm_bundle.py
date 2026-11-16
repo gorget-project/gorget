@@ -12,7 +12,7 @@ from test_transform_vendor_bump import make_ctx, make_state
 
 from gorget.config.loader import parse_pipeline_spec
 from gorget.config.schema import VendorBumpEntry, VendorBumpStep, VendorModule
-from gorget.dependencies.npm_bundle import _sync_lockfile, update_npm_bundle
+from gorget.dependencies.npm_bundle import _preserve_unchanged, _sync_lockfile, update_npm_bundle
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.transform.vendor_bump import VendorBumpHandler
 
@@ -288,3 +288,20 @@ def test_shared_external_lock_entry_keeps_its_resolution_metadata(tmp_path, inte
     assert json.loads(path.read_text())["packages"]["node_modules/shared"] == {
         **external, "inBundle": True,
     }
+
+
+def test_rehoisted_unchanged_package_retains_its_payload(tmp_path):
+    source, project = tmp_path / "source", tmp_path / "project"
+    original = "node_modules/parent/node_modules/native"
+    relocated = "node_modules/native"
+    (source / original).mkdir(parents=True)
+    (project / relocated / "node_modules/new-child").mkdir(parents=True)
+    (source / original / "native.node").write_bytes(b"upstream binary")
+    manifest = {"name": "native", "version": "1.0.0"}
+    _preserve_unchanged(source, project, {original: manifest}, {relocated: manifest})
+    assert (project / relocated / "native.node").read_bytes() == b"upstream binary"
+    assert (project / relocated / "node_modules/new-child").is_dir()
+    with pytest.raises(GorgetConfigError, match="Cannot choose"):
+        _preserve_unchanged(source, project, {
+            original: manifest, "node_modules/other/node_modules/native": manifest,
+        }, {relocated: manifest})

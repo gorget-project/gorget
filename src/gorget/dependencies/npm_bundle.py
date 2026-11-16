@@ -107,6 +107,25 @@ def _preserve_package(source: Path, destination: Path) -> None:
             shutil.copy2(entry, target)
 
 
+def _preserve_unchanged(source: Path, project: Path, before: dict, after: dict) -> None:
+    for location, data in after.items():
+        identity = (data["name"], data["version"])
+        old = before.get(location)
+        if old and (old["name"], old["version"]) == identity:
+            previous = location
+        else:
+            candidates = [path for path, meta in before.items()
+                          if (meta["name"], meta["version"]) == identity]
+            if len(candidates) > 1:
+                raise GorgetConfigError(
+                    f"Cannot choose an unchanged payload for rehoisted {location}"
+                )
+            if not candidates:
+                continue
+            previous = candidates[0]
+        _preserve_package(source / previous, project / location)
+
+
 def _sync_lockfile(
     path: Path, manifest: dict, before: dict, resolved: dict,
 ) -> None:
@@ -191,10 +210,7 @@ def update_npm_bundle(
                 raise GorgetTransientError(
                     f"Installed bundle does not satisfy {pin.dependency} {pin.version}"
                 )
-        for location, data in after.items():
-            old = before.get(location)
-            if old and (old["name"], old["version"]) == (data["name"], data["version"]):
-                _preserve_package(module_dir / location, project / location)
+        _preserve_unchanged(module_dir, project, before, after)
 
         updated = json.loads((project / "package.json").read_text())
         for section in ("dependencies", "optionalDependencies"):

@@ -126,6 +126,8 @@ run. Existing version 2/3 `package-lock.json` and `npm-shrinkwrap.json` files
 have their bundled entries refreshed;
 external entries are retained. Version 2 locks are emitted in version 3 format.
 A missing lockfile remains absent from the output archive.
+Rehoisted unchanged packages retain their original payload when there is one
+source copy to choose from; ambiguous copies fail rather than losing local artifacts.
 If a new bundled package would replace an external lock entry with a different
 identity or integrity at the same location, the update fails rather than changing the external
 graph. Resolve that layout upstream before applying the bump.
