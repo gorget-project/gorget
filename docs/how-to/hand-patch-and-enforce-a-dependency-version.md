@@ -92,6 +92,53 @@ repacks Source0. It deliberately does not copy the generated `vendor/` tree;
 that remains Source1. `sync-go-modules` is transform-only because it needs the
 transform stage's source-artifact repack step.
 
+### npm release archives with bundled dependencies
+
+Use `bundled: true` when the input ships its runtime code in `node_modules`
+and the RPM installs that tree directly:
+
+```yaml
+transform:
+  - type: vendor-bump
+    ecosystem: npm
+    bundled: true
+    modules:
+      - path: package
+    pins:
+      - dependency: glob
+        version: "~14.0.6"
+      - dependency: minimatch
+        version: "~11.0.5"
+```
+
+Gorget reads `bundleDependencies` (or `bundledDependencies`), including the
+boolean `true` form. It resolves only those roots and their runtime dependencies;
+unbundled dependencies, development dependencies and workspaces are excluded from
+the resolver project. A temporary lockfile is seeded from the shipped tree even
+when the archive has no lockfile. Existing installed versions seed the resolution,
+and native npm overrides apply the requested updates, including nested copies.
+New required dependencies are included in the resulting bundle.
+
+The source manifest keeps its scripts, workspace declarations and bundle list.
+Only bumped direct requirements and npm overrides change. Payloads of unchanged
+packages, including prebuilt native artifacts, are retained. Install scripts never
+run. Existing version 2/3 `package-lock.json` and `npm-shrinkwrap.json` files
+have their bundled entries refreshed;
+external entries are retained. Version 2 locks are emitted in version 3 format.
+A missing lockfile remains absent from the output archive.
+Rehoisted unchanged packages retain their original payload when there is one
+source copy to choose from; ambiguous copies fail rather than losing local artifacts.
+If a new bundled package would replace an external lock entry with a different
+identity or integrity at the same location, the update fails rather than changing the external
+graph. Resolve that layout upstream before applying the bump.
+
+The updated tree and manifest are published together only after every module
+succeeds, then Source0 is deterministically repacked. No separate `vendor` step
+or shell reinstall is required. The default metadata-only npm bump behavior is
+unchanged. This option requires a declared bundle and does not update dependencies
+compiled into JavaScript bundles. Native artifacts in packages whose versions
+change must already be present in their published tarballs, since scripts are disabled.
+
 ## 2. Enforce it forever
 
 ```yaml

@@ -175,6 +175,9 @@ class VendorBumpStep:
     ecosystem: Literal["go", "npm", "pnpm", "yarn", "cargo", "maven"]
     pins: list[VendorBumpEntry] = field(default_factory=list)
     modules: list[VendorModule] = field(default_factory=lambda: [VendorModule(path=".")])
+    # npm release archives ship the dependency tree itself, sometimes only for
+    # selected dependencies, rather than a lockfile plus a separate cache.
+    bundled: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
