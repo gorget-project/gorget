@@ -102,7 +102,74 @@ def _parse_fetch_step(raw_step: object) -> FetchStep:
         raise GorgetConfigError(f"Invalid {step_type} fetch step: {exc}") from exc
 
 
-def _parse_transform_step(raw_step: object) -> TransformStep:
+def _vendor_bump_pin(
+    raw_pin: object, source: str, *, module: str | None = None
+) -> VendorBumpEntry | None:
+    """Validate one pin, from inline `pins` or a `deps` entry.
+
+    In a `deps` file each entry's optional `module` key selects the step and is
+    not a pin field; another module's entries return None.
+    """
+    if not isinstance(raw_pin, dict):
+        raise GorgetConfigError(f"{source} has a non-mapping pin: {raw_pin!r}")
+    pin = _snake_case_keys(raw_pin)
+    if module is not None:
+        entry_module = pin.pop("module", ".")
+        if not isinstance(entry_module, str):
+            raise GorgetConfigError(
+                f"{source} pin {pin.get('dependency')!r} has a non-string module: {entry_module!r}"
+            )
+        if entry_module != module:
+            return None
+    if not isinstance(pin.get("version"), str):
+        raise GorgetConfigError(
+            f"{source} pin {pin.get('dependency')!r} needs a string version, "
+            f"got {pin.get('version')!r}"
+        )
+    try:
+        return VendorBumpEntry(**pin)
+    except TypeError as exc:
+        raise GorgetConfigError(f"{source} has an invalid pin: {exc}") from exc
+
+
+def _parse_vendor_bump_pins(step: dict, config_dir: Path | None) -> None:
+    """Resolve a `vendor-bump` step's pins, from `deps` or inline.
+
+    `deps` names a YAML file next to the pipeline, grouped by ecosystem, so one
+    file can describe every module of a package. Each entry applies to the step
+    whose single module matches its optional `module` key (default `.`).
+    """
+    if "pins" in step:
+        if "deps" in step:
+            raise GorgetConfigError("vendor-bump accepts either pins or deps, not both")
+        step["pins"] = [_vendor_bump_pin(pin, "vendor-bump step") for pin in step["pins"]]
+        return
+    if "deps" not in step:
+        return
+    deps = step.pop("deps")
+    if not isinstance(deps, str):
+        raise GorgetConfigError(f"vendor-bump deps must be a file name, got {deps!r}")
+    if config_dir is None:
+        raise GorgetConfigError(
+            f"vendor-bump deps {deps!r} needs the pipeline file path to resolve it"
+        )
+    modules = step.get("modules", [VendorModule(path=".")])
+    if len(modules) != 1:
+        raise GorgetConfigError("vendor-bump deps requires exactly one module")
+    ecosystem = step.get("ecosystem")
+    entries = load_yaml(config_dir / deps).get(ecosystem)
+    if not isinstance(entries, list):
+        raise GorgetConfigError(f"Dependency file {deps} has no {ecosystem!r} list")
+    source = f"Dependency file {deps}"
+    pins = [_vendor_bump_pin(entry, source, module=modules[0].path) for entry in entries]
+    step["pins"] = [pin for pin in pins if pin is not None]
+
+
+def _parse_transform_step(
+    raw_step: object,
+    *,
+    config_dir: Path | None = None,
+) -> TransformStep:
     if not isinstance(raw_step, dict):
         raise GorgetConfigError(f"Each transform step must be a mapping, got: {raw_step!r}")
     step = _snake_case_keys(raw_step)
@@ -113,10 +180,10 @@ def _parse_transform_step(raw_step: object) -> TransformStep:
             f"{sorted(TRANSFORM_STEP_TYPES)})"
         )
     step_cls = TRANSFORM_STEP_TYPES[step_type]
-    if step_type == "vendor-bump" and "pins" in step:
-        step["pins"] = [VendorBumpEntry(**_snake_case_keys(pin)) for pin in step["pins"]]
     if "modules" in step:
         step["modules"] = [VendorModule(**_snake_case_keys(mod)) for mod in step["modules"]]
+    if step_type == "vendor-bump":
+        _parse_vendor_bump_pins(step, config_dir)
     if step_type == "vendor" and "outputs" in step:
         try:
             step["outputs"] = [VendorOutput(**_snake_case_keys(o)) for o in step["outputs"]]
@@ -242,7 +309,7 @@ def _parse_publish_section(raw: dict) -> PublishSection | None:
     return PublishSection(files=files)
 
 
-def parse_pipeline_spec(raw: dict) -> PipelineSpec:
+def parse_pipeline_spec(raw: dict, *, config_dir: Path | None = None) -> PipelineSpec:
     raw, moved_vendor_steps = move_fetch_vendor_steps(raw)
     if moved_vendor_steps:
         logger.warning(
@@ -263,7 +330,7 @@ def parse_pipeline_spec(raw: dict) -> PipelineSpec:
     raw_transform = raw.get("transform", [])
     if not isinstance(raw_transform, list):
         raise GorgetConfigError("The 'transform' section must be a list of steps")
-    transform_steps = [_parse_transform_step(step) for step in raw_transform]
+    transform_steps = [_parse_transform_step(step, config_dir=config_dir) for step in raw_transform]
 
     raw_toolchain = raw.get("toolchain", [])
     if not isinstance(raw_toolchain, list):
@@ -314,7 +381,7 @@ def build_pipeline_spec(path: Path, *, substitution_vars: SubstitutionVars) -> P
     raw = load_yaml(path)
     substituted = walk_and_substitute(raw, substitution_vars)
     assert isinstance(substituted, dict)
-    return parse_pipeline_spec(substituted)
+    return parse_pipeline_spec(substituted, config_dir=path.parent)
 
 
 __all__ = [

@@ -57,6 +57,43 @@ pins:
 See [`go-pipeline-demo`](../../examples/go-pipeline-demo/) for this running
 against a real `go.mod`.
 
+### Keep pins in a dependency file
+
+A package with several modules (or ecosystems) can declare its pins in a
+separate file instead of inline, so one file holds every floor a CVE update
+needs to edit:
+
+```yaml
+transform:
+  - type: vendor-bump
+    ecosystem: go
+    deps: example.dependencies.yaml
+
+  - type: vendor-bump
+    ecosystem: go
+    modules:
+      - path: examples/remote_storage
+    deps: example.dependencies.yaml
+```
+
+```yaml
+go:
+  - dependency: golang.org/x/net
+    version: 0.23.0
+  - dependency: golang.org/x/text
+    version: 0.39.0
+    module: examples/remote_storage
+pnpm:
+  - dependency: follow-redirects
+    version: 1.16.2
+    module: web/ui/react-app
+```
+
+`deps` is resolved next to the pipeline file. The step's `ecosystem` selects the
+top-level section, and each entry applies to the step whose single module
+matches its optional `module` key (default `.`). A step accepts `pins` or
+`deps`, not both; an empty section is a valid no-op.
+
 Native Go bumps update `go.mod` and `go.sum` in the source workspace. Gorget
 repacks Source0 after the transform stage, so the build tree receives those edits
 without a separate spec patch. It applies all pending Go pins before one tidy

@@ -231,6 +231,143 @@ def test_transform_vendor_bump_then_vendor_sequencing():
     assert spec.toolchain.entries == [ToolchainEntry(name="go", version="1.22.0")]
 
 
+def test_transform_vendor_bump_deps_selects_ecosystem_and_module(tmp_path):
+    (tmp_path / "example.dependencies.yaml").write_text(
+        """\
+go:
+  - dependency: golang.org/x/net
+    version: 0.23.0
+  - dependency: golang.org/x/text
+    version: 0.39.0
+    module: examples/sub
+pnpm:
+  - dependency: follow-redirects
+    version: 1.16.2
+"""
+    )
+    pipeline = tmp_path / "example.source-pipeline.yaml"
+    pipeline.write_text(
+        """\
+transform:
+  - type: vendor-bump
+    ecosystem: go
+    deps: example.dependencies.yaml
+  - type: vendor-bump
+    ecosystem: go
+    modules:
+      - path: examples/sub
+    deps: example.dependencies.yaml
+"""
+    )
+
+    spec = build_pipeline_spec(pipeline, substitution_vars=make_vars())
+
+    root, sub = spec.transform.steps
+    assert isinstance(root, VendorBumpStep) and isinstance(sub, VendorBumpStep)
+    assert [(pin.dependency, pin.version) for pin in root.pins] == [("golang.org/x/net", "0.23.0")]
+    assert [(pin.dependency, pin.version) for pin in sub.pins] == [("golang.org/x/text", "0.39.0")]
+
+
+def test_transform_vendor_bump_rejects_pins_with_deps(tmp_path):
+    (tmp_path / "example.dependencies.yaml").write_text("go: []\n")
+
+    with pytest.raises(GorgetConfigError, match="either pins or deps"):
+        parse_pipeline_spec(
+            {
+                "transform": [
+                    {
+                        "type": "vendor-bump",
+                        "ecosystem": "go",
+                        "pins": [],
+                        "deps": "example.dependencies.yaml",
+                    }
+                ]
+            },
+            config_dir=tmp_path,
+        )
+
+
+def test_transform_vendor_bump_deps_requires_the_step_ecosystem(tmp_path):
+    (tmp_path / "example.dependencies.yaml").write_text(
+        "pnpm:\n  - dependency: follow-redirects\n    version: 1.16.2\n"
+    )
+
+    with pytest.raises(GorgetConfigError, match="has no 'go' list"):
+        parse_pipeline_spec(
+            {
+                "transform": [
+                    {"type": "vendor-bump", "ecosystem": "go", "deps": "example.dependencies.yaml"}
+                ]
+            },
+            config_dir=tmp_path,
+        )
+
+
+def test_transform_vendor_bump_deps_requires_one_module(tmp_path):
+    (tmp_path / "example.dependencies.yaml").write_text("go: []\n")
+
+    with pytest.raises(GorgetConfigError, match="exactly one module"):
+        parse_pipeline_spec(
+            {
+                "transform": [
+                    {
+                        "type": "vendor-bump",
+                        "ecosystem": "go",
+                        "modules": [{"path": "."}, {"path": "examples/sub"}],
+                        "deps": "example.dependencies.yaml",
+                    }
+                ]
+            },
+            config_dir=tmp_path,
+        )
+
+
+@pytest.mark.parametrize(
+    ("entry", "match"),
+    [
+        ("- dependency: x\n", "needs a string version"),
+        ("- dependency: x\n  version: [1.0.0]\n", "needs a string version"),
+        ("- dependency: x\n  version: 1.0.0\n  module: 3\n", "non-string module"),
+        ("- 3\n", "non-mapping pin"),
+    ],
+)
+def test_transform_vendor_bump_rejects_malformed_pins(tmp_path, entry, match):
+    (tmp_path / "example.dependencies.yaml").write_text(f"go:\n{entry}")
+
+    with pytest.raises(GorgetConfigError, match=match):
+        parse_pipeline_spec(
+            {
+                "transform": [
+                    {"type": "vendor-bump", "ecosystem": "go", "deps": "example.dependencies.yaml"}
+                ]
+            },
+            config_dir=tmp_path,
+        )
+
+
+def test_transform_vendor_bump_deps_must_be_a_file_name():
+    with pytest.raises(GorgetConfigError, match="deps must be a file name"):
+        parse_pipeline_spec(
+            {"transform": [{"type": "vendor-bump", "ecosystem": "go", "deps": 42}]},
+            config_dir=Path("."),
+        )
+
+
+def test_transform_vendor_bump_inline_pins_are_validated():
+    with pytest.raises(GorgetConfigError, match="has an invalid pin"):
+        parse_pipeline_spec(
+            {
+                "transform": [
+                    {
+                        "type": "vendor-bump",
+                        "ecosystem": "go",
+                        "pins": [{"dependency": "x", "version": "1.0", "bogus": 1}],
+                    }
+                ]
+            }
+        )
+
+
 def test_transform_vendor_can_sync_go_modules_to_source():
     spec = parse_pipeline_spec(
         {
