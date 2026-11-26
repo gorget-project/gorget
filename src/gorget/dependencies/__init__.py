@@ -17,8 +17,10 @@ from gorget.dependencies.lockfiles import (
     _pnpm_reference,
     _yarn_descriptor_name,
     pnpm_provides,
+    read_pnpm_lockfile,
     yarn_provides,
 )
+from gorget.exceptions import GorgetConfigError
 from gorget.package_manager import PackageManager
 from gorget.util.subprocess_run import run
 from gorget.util.version import satisfies_constraint
@@ -122,7 +124,7 @@ def read_inventory(
         lockfile = workspace / "pnpm-lock.yaml"
         if lockfile.is_file():
             production, _ = pnpm_provides(lockfile)
-            data = yaml.safe_load(lockfile.read_text()) or {}
+            data = read_pnpm_lockfile(lockfile)
             for location, entry in data.get("snapshots", {}).items():
                 name, _, version = location.split("(", 1)[0].rpartition("@")
                 if name and version:
@@ -214,11 +216,28 @@ def read_inventory(
     return DependencyInventory(ecosystem, workspace, tuple(copies))
 
 
-def bundled_provides(ecosystem: str, workspace: Path, modules: Sequence) -> dict:
+def bundled_provides(
+    ecosystem: str, workspace: Path, modules: Sequence, *, include_workspaces: bool = False,
+) -> dict:
     inventories = [read_inventory(ecosystem, workspace / module.path) for module in modules]
+    workspace_provides: set[tuple[str, str]] = set()
+    if include_workspaces:
+        if ecosystem != "pnpm":
+            raise GorgetConfigError("include-workspaces is only supported for pnpm")
+        for module in modules:
+            root = (workspace / module.path).resolve()
+            for importer in read_pnpm_lockfile(root / "pnpm-lock.yaml").get("importers", {}):
+                if importer == ".":
+                    continue
+                member = (root / importer).resolve()
+                if not member.is_relative_to(root):
+                    raise GorgetConfigError(f"pnpm importer escapes its workspace: {importer}")
+                package = json.loads((member / "package.json").read_text())
+                if package.get("name") and package.get("version"):
+                    workspace_provides.add((package["name"], package["version"]))
     return {
         scope: sorted(
-            set().union(
+            workspace_provides.union(
                 *(inventory.provides(production=scope == "production") for inventory in inventories)
             )
         )

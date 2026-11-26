@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import sqlite3
 import tempfile
@@ -23,46 +22,16 @@ from gorget.config.schema import _DEFAULT_NPM_PLATFORMS, ToolchainEntry, VendorP
 from gorget.dependencies.lockfiles import PACKAGE_NAME_RE as _PACKAGE_NAME_RE
 from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.package_manager import PackageManager
+from gorget.pnpm import install_pnpm_cli, resolve_pnpm_version
 from gorget.util.archive import pack_files
 from gorget.util.subprocess_run import run
 
-_PACKAGE_MANAGER_RE = re.compile(r"^pnpm@(?P<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\+.*)?$")
-_PNPM_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
-
 
 def _resolve_pnpm_version(
-    manifest: dict[str, object],
-    manifest_path: Path,
-    module_dir: Path,
+    manifest: dict[str, object], manifest_path: Path, module_dir: Path,
     toolchain: Sequence[ToolchainEntry],
 ) -> str:
-    declared_manager = manifest.get("packageManager")
-    if declared_manager is not None:
-        match = _PACKAGE_MANAGER_RE.fullmatch(str(declared_manager))
-        if not match:
-            raise GorgetConfigError(
-                f"Invalid pnpm packageManager declaration in {manifest_path}: {declared_manager!r}"
-            )
-        return match.group("version")
-
-    dev_engines = manifest.get("devEngines")
-    dev_manager = dev_engines.get("packageManager") if isinstance(dev_engines, dict) else None
-    dev_version = (
-        dev_manager.get("version")
-        if isinstance(dev_manager, dict) and dev_manager.get("name") == "pnpm"
-        else None
-    )
-    if isinstance(dev_version, str) and _PNPM_VERSION_RE.fullmatch(dev_version):
-        return dev_version
-
-    result = PackageManager(module_dir, toolchain, runner=run).run(["pnpm", "--version"])
-    version = result.stdout.strip()
-    if result.returncode != 0 or not _PNPM_VERSION_RE.fullmatch(version):
-        raise GorgetConfigError(
-            f"Could not determine pnpm version for {manifest_path}: "
-            f"{(result.stdout + result.stderr).strip()}"
-        )
-    return version
+    return resolve_pnpm_version(manifest, manifest_path, module_dir, toolchain, runner=run)
 
 
 class PnpmVendor:
@@ -125,6 +94,7 @@ class PnpmVendor:
         toolchain: Sequence[ToolchainEntry] = (),
         platforms: Sequence[VendorPlatform] = (),
         metadata_packages: Sequence[str] = (),
+        additional_modules: Sequence[Path] = (),
     ) -> None:
         """Build an offline bundle with the module's pinned pnpm CLI, store,
         and registry metadata. Work from a scratch copy so fetch never edits
@@ -143,6 +113,18 @@ class PnpmVendor:
         if not isinstance(manifest, dict):
             raise GorgetConfigError(f"Expected an object in {manifest_path}")
         pnpm_version = _resolve_pnpm_version(manifest, manifest_path, module_dir, toolchain)
+        for other in additional_modules:
+            other_manifest = other / "package.json"
+            if not (other / "pnpm-lock.yaml").is_file():
+                raise GorgetConfigError(f"pnpm offline cache requires pnpm-lock.yaml in {other}")
+            version = _resolve_pnpm_version(
+                json.loads(other_manifest.read_text()), other_manifest, other, toolchain,
+            )
+            if version != pnpm_version:
+                raise GorgetConfigError(
+                    "A shared pnpm offline cache requires the same pnpm version for all modules; "
+                    "use separate vendor steps for different versions"
+                )
         major, minor = (int(part) for part in pnpm_version.split(".", 2)[:2])
 
         archive_path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,65 +132,21 @@ class PnpmVendor:
             prefix="_pnpm_offline_cache_", dir=archive_path.parent
         ) as tmp:
             root = Path(tmp)
-            scratch_module = root / "module"
-            shutil.copytree(
-                module_dir,
-                scratch_module,
-                ignore=shutil.ignore_patterns(".git", "node_modules", ".pnpm-store", ".pnpm-cache"),
-            )
+            scratch_modules = []
+            for index, source in enumerate((module_dir, *additional_modules)):
+                scratch = root / f"module-{index}"
+                shutil.copytree(
+                    source, scratch,
+                    ignore=shutil.ignore_patterns(
+                        ".git", "node_modules", ".pnpm-store", ".pnpm-cache",
+                    ),
+                )
+                scratch_modules.append(scratch)
+            scratch_module = scratch_modules[0]
             pnpm_root = root / ".pnpm"
-            pnpm_root.mkdir()
-            install_packages = [f"pnpm@{pnpm_version}"]
-            if major >= 12:
-                # npm filters pnpm's optional native executable to the host
-                # architecture. Hummingbird builds both x64 and arm64 RPMs.
-                install_packages += [
-                    f"@pnpm/exe.linux-x64@{pnpm_version}",
-                    f"@pnpm/exe.linux-arm64@{pnpm_version}",
-                ]
-            npm_result = PackageManager(scratch_module, toolchain, runner=run).run(
-                [
-                    "npm",
-                    "install",
-                    "--prefix",
-                    str(pnpm_root),
-                    "--ignore-scripts",
-                    "--force",
-                    *install_packages,
-                ],
-                env={"CI": "true"},
+            pnpm_command = install_pnpm_cli(
+                pnpm_root, scratch_module, pnpm_version, toolchain, runner=run,
             )
-            if npm_result.returncode != 0:
-                raise GorgetTransientError(
-                    f"Could not install pnpm@{pnpm_version}: {npm_result.stderr.strip()}"
-                )
-
-            pnpm_mjs = pnpm_root / "node_modules/pnpm/bin/pnpm.mjs"
-            pnpm_wrapper = pnpm_root / "node_modules/.bin/pnpm"
-            if pnpm_mjs.is_file():
-                # The pnpm package's install hook normally repairs this npm
-                # shim. Install pnpm with scripts disabled, then create a
-                # working shim for project scripts that invoke pnpm again.
-                pnpm_wrapper.unlink(missing_ok=True)
-                pnpm_wrapper.write_text(
-                    '#!/bin/sh\nexec node "$(dirname "$0")/../pnpm/bin/pnpm.mjs" "$@"\n'
-                )
-                pnpm_wrapper.chmod(0o755)
-                pnpm_command = ["node", str(pnpm_mjs)]
-            elif pnpm_wrapper.is_file():
-                pnpm_command = [str(pnpm_wrapper)]
-            else:
-                raise GorgetConfigError(f"pnpm entry point not found: {pnpm_mjs} or {pnpm_wrapper}")
-
-            version_result = PackageManager(None, toolchain, runner=run).run(
-                [*pnpm_command, "--version"]
-            )
-            active_version = version_result.stdout.strip().removeprefix("v")
-            if version_result.returncode != 0 or active_version != pnpm_version:
-                raise GorgetConfigError(
-                    f"Bundled pnpm version does not match {pnpm_version}: "
-                    f"{(version_result.stdout + version_result.stderr).strip()}"
-                )
 
             store_dir = root / ".pnpm-store"
             store_dir.mkdir()
@@ -219,42 +157,44 @@ class PnpmVendor:
             install_platforms = (
                 platforms or _DEFAULT_NPM_PLATFORMS if supports_platform_flags else (None,)
             )
-            for platform in install_platforms:
-                platform_args = (
-                    ["--cpu", platform.cpu, "--os", platform.os, "--libc", platform.libc]
-                    if platform is not None
-                    else []
-                )
-                install_result = PackageManager(scratch_module, toolchain, runner=run).run(
-                    [
-                        *pnpm_command,
-                        "install",
-                        "--force",
-                        "--ignore-scripts",
-                        "--frozen-lockfile",
-                        "--store-dir",
-                        str(store_dir),
-                        *platform_args,
-                    ],
-                    env={"CI": "true", "XDG_CACHE_HOME": str(cache_dir)},
-                )
-                if install_result.returncode != 0:
-                    target = f"{platform.cpu}/{platform.os}" if platform else "all platforms"
-                    raise GorgetTransientError(
-                        f"pnpm install failed for {target} "
-                        f"in {module_dir}: {install_result.stderr.strip()}"
+            for scratch_module in scratch_modules:
+                for platform in install_platforms:
+                    platform_args = (
+                        ["--cpu", platform.cpu, "--os", platform.os, "--libc", platform.libc]
+                        if platform is not None
+                        else []
                     )
-                node_modules = scratch_module / "node_modules"
-                if node_modules.exists():
-                    shutil.rmtree(node_modules)
+                    install_result = PackageManager(scratch_module, toolchain, runner=run).run(
+                        [
+                            *pnpm_command,
+                            "install",
+                            "--force",
+                            "--ignore-scripts",
+                            "--frozen-lockfile",
+                            "--store-dir",
+                            str(store_dir),
+                            *platform_args,
+                        ],
+                        env={"CI": "true", "XDG_CACHE_HOME": str(cache_dir)},
+                    )
+                    if install_result.returncode != 0:
+                        target = f"{platform.cpu}/{platform.os}" if platform else "all platforms"
+                        raise GorgetTransientError(
+                            f"pnpm install failed for {target} "
+                            f"in {scratch_module}: {install_result.stderr.strip()}"
+                        )
+                    node_modules = scratch_module / "node_modules"
+                    if node_modules.exists():
+                        shutil.rmtree(node_modules)
 
-            self._complete_metadata_cache(
-                metadata_packages,
-                cache_dir,
-                scratch_module,
-                toolchain,
-                pnpm_version,
-            )
+                self._complete_metadata_cache(
+                    metadata_packages,
+                    cache_dir,
+                    scratch_module,
+                    toolchain,
+                    pnpm_version,
+                )
+            _remove_project_links(store_dir)
             pack_files(
                 [
                     (pnpm_root, ".pnpm"),
@@ -405,10 +345,14 @@ def _node_modules_dirs(module_dir: Path) -> list[Path]:
     return found
 
 
-def _normalize_store(store_dir: Path) -> None:
-    """Remove checkout-specific metadata and timestamps from pnpm's store."""
+def _remove_project_links(store_dir: Path) -> None:
     for projects_dir in store_dir.glob("v*/projects"):
         shutil.rmtree(projects_dir, ignore_errors=True)
+
+
+def _normalize_store(store_dir: Path) -> None:
+    """Remove checkout-specific metadata and timestamps from pnpm's store."""
+    _remove_project_links(store_dir)
 
     for database in store_dir.glob("v*/index.db"):
         with sqlite3.connect(database) as connection:

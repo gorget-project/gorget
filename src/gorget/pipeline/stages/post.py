@@ -23,12 +23,15 @@ from __future__ import annotations
 
 import logging
 import shutil
+from fnmatch import fnmatchcase
+from pathlib import Path
 from typing import ClassVar
 
 from gorget.config.schema import BundledProvidesStep, PipelineSpec, PostRunStep
 from gorget.context import RunContext
 from gorget.dependencies import bundled_provides
-from gorget.exceptions import GorgetTransientError
+from gorget.dependencies.maven_provides import maven_provides
+from gorget.exceptions import GorgetConfigError, GorgetTransientError
 from gorget.pipeline.result import StageResult
 from gorget.pipeline.state import StageState
 from gorget.toolchain import wrap_command
@@ -61,22 +64,38 @@ class PostStage:
     def _run_bundled_provides(
         self, step: BundledProvidesStep, ctx: RunContext, state: StageState
     ) -> None:
-        # Parse straight from the fetched source tree -- the same checkout
-        # `vendor`/`vendor-bump` operate on, so provides reflect any bumps.
-        if state.source.path is None:
-            raise GorgetTransientError(
-                "bundled-provides step requires a source checkout -- add a preceding "
-                "'git' fetch step whose lockfiles this step can read"
+        source = state.source.path
+        if step.ecosystem == "maven":
+            if step.include_workspaces:
+                raise GorgetConfigError("include-workspaces is only supported for pnpm")
+            if not step.artifacts and source is None:
+                raise GorgetConfigError(
+                    "Maven bundled-provides requires artifacts or a source tree"
+                )
+            paths = (
+                [state.find_artifact(name).path for name in step.artifacts] if step.artifacts
+                else [(source or Path()) / module.path for module in step.modules]
             )
-        provides = bundled_provides(
-            step.ecosystem, state.source.path, step.modules
-        )
-        # Namespace is bundled(npm(...)) for every JS ecosystem: npm/pnpm/yarn
-        # all resolve against the npm registry, matching Fedora's convention.
+            repository = state.find_artifact(step.repository).path if step.repository else None
+            provides = maven_provides(paths, repository)
+            namespace = "mvn"
+        else:
+            if step.artifacts or step.repository:
+                raise GorgetConfigError("bundled-provides artifacts/repository require Maven")
+            if source is None:
+                raise GorgetTransientError("bundled-provides step requires a source checkout")
+            provides = bundled_provides(
+                step.ecosystem, source, step.modules,
+                include_workspaces=step.include_workspaces,
+            )[step.scope]
+            namespace = "npm"
         lines = [
-            f"Provides:       bundled(npm({name})) = {rpm_version(version)}"
-            for name, version in provides[step.scope]  # already sorted
+            f"Provides:       bundled({namespace}({name})) = "
+            f"{version if namespace == 'mvn' else rpm_version(version)}"
+            for name, version in provides
+            if not any(fnmatchcase(name, pattern) for pattern in step.exclude)
         ]
+        assert step.output is not None
         inc_path = ctx.package_dir / step.output
         inc_path.write_text("\n".join(lines) + "\n")
         logger.debug(
