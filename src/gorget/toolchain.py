@@ -23,6 +23,7 @@ import contextlib
 import logging
 import os
 import re
+import shlex
 import tempfile
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -46,6 +47,8 @@ _VERSION_CHECKS: dict[str, tuple[list[str], re.Pattern[str]]] = {
 }
 _DECLARED_VERSION = re.compile(r"\d+(?:\.\d+)*")
 _RPM_BINDIR = Path("/usr/bin")
+# Changing npm major requires an explicit review of the CI image's RPM contents.
+_STANDALONE_NPM_PACKAGE = "npm12"
 
 
 def _parse_declared_version(entry: ToolchainEntry, value: object, field: str) -> list[str]:
@@ -72,6 +75,20 @@ def _rpm_owned(path: Path) -> bool:
     return result.returncode == 0
 
 
+def _rpm_package_name(path: Path) -> str | None:
+    """Return the exact package owning a file, without trusting the caller's PATH."""
+    try:
+        result = run(
+            [str(_RPM_BINDIR / "rpm"), "-q", "--queryformat", "%{NAME}\n", "-f", str(path)]
+        )
+    except FileNotFoundError:
+        return None
+    names = result.stdout.splitlines()
+    if result.returncode != 0 or len(names) != 1 or not names[0]:
+        return None
+    return names[0]
+
+
 def _installed_rpm_binary(name: str) -> str | None:
     path = _RPM_BINDIR / name
     if not path.is_file() or not os.access(path, os.X_OK):
@@ -82,8 +99,27 @@ def _installed_rpm_binary(name: str) -> str | None:
     return str(path)
 
 
-def _versioned_aliases(entry: ToolchainEntry) -> dict[str, str]:
-    """Return PATH aliases backed by installed, distinctly named RPM binaries."""
+def _installed_rpm_node_script(name: str) -> str | None:
+    """Find a standalone npm CLI that can run under the selected Node binary."""
+    binary = _installed_rpm_binary(name)
+    if binary is None:
+        return None
+    try:
+        script = Path(binary).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if (
+        script.suffix not in {".js", ".mjs", ".cjs"}
+        or not _rpm_owned(script)
+        or _rpm_package_name(Path(binary)) != _STANDALONE_NPM_PACKAGE
+        or _rpm_package_name(script) != _STANDALONE_NPM_PACKAGE
+    ):
+        return None
+    return str(script)
+
+
+def _versioned_aliases(entry: ToolchainEntry) -> dict[str, tuple[str, ...]]:
+    """Return PATH aliases backed by installed RPM toolchains."""
     version_parts = _version_parts(entry)
 
     if entry.name == "node":
@@ -92,20 +128,40 @@ def _versioned_aliases(entry: ToolchainEntry) -> dict[str, str]:
         if node is None:
             return {}
 
-        targets = {"node": node}
-        for alias in ("npm", "npx"):
-            target = _installed_rpm_binary(f"{alias}-{suffix}")
-            if target is None:
+        targets: dict[str, tuple[str, ...]] = {"node": (node,)}
+        versioned = {
+            alias: _installed_rpm_binary(f"{alias}-{suffix}")
+            for alias in ("npm", "npx")
+        }
+        if any(versioned.values()):
+            for alias, target in versioned.items():
+                if target is None:
+                    raise GorgetConfigError(
+                        f"node-{suffix} is installed but {alias}-{suffix} is missing"
+                    )
+                targets[alias] = (target,)
+        else:
+            # Standalone npm RPMs provide unversioned JS entry points. Invoke
+            # them with the selected Node: their absolute shebang may name a
+            # different Node version than this pipeline requested.
+            if _rpm_package_name(Path(node)) != f"nodejs{suffix}":
                 raise GorgetConfigError(
-                    f"node-{suffix} is installed but {alias}-{suffix} is missing"
+                    f"node-{suffix} is not owned by the expected nodejs{suffix} RPM"
                 )
-            targets[alias] = target
+            for alias in ("npm", "npx"):
+                script = _installed_rpm_node_script(alias)
+                if script is None:
+                    raise GorgetConfigError(
+                        f"node-{suffix} is installed but neither {alias}-{suffix} "
+                        f"nor an RPM-owned standalone {alias} JS CLI is available"
+                    )
+                targets[alias] = (node, script)
         return targets
 
     if entry.name == "python" and len(version_parts) >= 2:
         executable = _installed_rpm_binary(f"python{version_parts[0]}.{version_parts[1]}")
         if executable is not None:
-            return {"python": executable, "python3": executable}
+            return {"python": (executable,), "python3": (executable,)}
 
     return {}
 
@@ -121,7 +177,7 @@ def activate(entries: Sequence[ToolchainEntry]) -> Iterator[None]:
     """
     original_path = os.environ.get("PATH")
     search_path = original_path if original_path is not None else os.defpath
-    targets: dict[str, str] = {}
+    targets: dict[str, tuple[str, ...]] = {}
 
     for entry in entries:
         for alias, target in _versioned_aliases(entry).items():
@@ -140,7 +196,12 @@ def activate(entries: Sequence[ToolchainEntry]) -> Iterator[None]:
     with tempfile.TemporaryDirectory(prefix="gorget-toolchain-") as tmp_dir:
         shim_dir = Path(tmp_dir)
         for alias, target in targets.items():
-            (shim_dir / alias).symlink_to(target)
+            shim = shim_dir / alias
+            if len(target) == 1:
+                shim.symlink_to(target[0])
+            else:
+                shim.write_text(f"#!/bin/sh\nexec {shlex.join(target)} \"$@\"\n")
+                shim.chmod(0o700)
             logger.debug("toolchain alias: %s -> %s", alias, target)
 
         os.environ["PATH"] = f"{shim_dir}{os.pathsep}{search_path}"

@@ -6,7 +6,7 @@ import pytest
 
 from gorget.config.schema import ToolchainEntry
 from gorget.exceptions import GorgetConfigError
-from gorget.toolchain import _rpm_owned, activate, verify_installed, wrap_command
+from gorget.toolchain import _rpm_owned, _rpm_package_name, activate, verify_installed, wrap_command
 
 
 def _completed(stdout="", stderr="", returncode=0):
@@ -20,6 +20,19 @@ def test_rpm_ownership_check_uses_absolute_trusted_command(tmp_path, monkeypatch
 
     assert _rpm_owned(candidate)
     mock_run.assert_called_once_with(["/trusted/bin/rpm", "-qf", str(candidate)])
+
+
+def test_rpm_package_name_uses_absolute_trusted_command(tmp_path, monkeypatch, mocker):
+    mock_run = mocker.patch(
+        "gorget.toolchain.run", return_value=_completed(stdout="npm12\n")
+    )
+    monkeypatch.setattr("gorget.toolchain._RPM_BINDIR", Path("/trusted/bin"))
+    candidate = tmp_path / "npm"
+
+    assert _rpm_package_name(candidate) == "npm12"
+    mock_run.assert_called_once_with(
+        ["/trusted/bin/rpm", "-q", "--queryformat", "%{NAME}\n", "-f", str(candidate)]
+    )
 
 
 def test_verify_installed_empty_list_does_nothing(mocker):
@@ -220,6 +233,100 @@ def test_activate_selects_installed_node_rpm_binaries(tmp_path, monkeypatch):
         verify_installed(entries)
 
     assert os.environ["PATH"] == str(bin_dir)
+
+
+def test_activate_runs_standalone_npm_with_selected_node(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _executable(bin_dir / "node", "v22.0.0")
+    node_24 = bin_dir / "node-24"
+    node_24.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo v24.18.1; '
+        'else printf "node-24:%s:%s\\n" "$1" "$2"; fi\n'
+    )
+    node_24.chmod(0o755)
+    for alias in ("npm", "npx"):
+        script = bin_dir / f"{alias}-cli.js"
+        script.write_text("#!/usr/bin/node\n")
+        script.chmod(0o755)
+        (bin_dir / alias).symlink_to(script)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setattr("gorget.toolchain._RPM_BINDIR", bin_dir)
+    monkeypatch.setattr("gorget.toolchain._rpm_owned", lambda path: True)
+    monkeypatch.setattr(
+        "gorget.toolchain._rpm_package_name",
+        lambda path: "nodejs24" if path.name == "node-24" else "npm12",
+    )
+
+    entries = [ToolchainEntry(name="node", version="24")]
+    with activate(entries):
+        for alias in ("npm", "npx"):
+            result = subprocess.run(
+                ["/usr/bin/env", alias, "--version"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert result.stdout == f"node-24:{bin_dir / f'{alias}-cli.js'}:--version\n"
+        verify_installed(entries)
+
+    assert os.environ["PATH"] == str(bin_dir)
+
+
+def test_activate_rejects_non_rpm_standalone_npm_script(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _executable(bin_dir / "node-24", "v24.18.1")
+    script = bin_dir / "npm-cli.js"
+    script.write_text("#!/usr/bin/node\n")
+    script.chmod(0o755)
+    (bin_dir / "npm").symlink_to(script)
+    monkeypatch.setattr("gorget.toolchain._RPM_BINDIR", bin_dir)
+    monkeypatch.setattr(
+        "gorget.toolchain._rpm_owned", lambda path: path.name != "npm-cli.js"
+    )
+    monkeypatch.setattr("gorget.toolchain._rpm_package_name", lambda path: "nodejs24")
+
+    with pytest.raises(GorgetConfigError, match="RPM-owned standalone npm JS CLI"):
+        with activate([ToolchainEntry(name="node", version="24")]):
+            pass
+
+
+@pytest.mark.parametrize(
+    "unexpected_owner_for",
+    ["node-24", "npm", "npm-cli.js", "npx", "npx-cli.js"],
+)
+def test_activate_rejects_wrong_standalone_rpm_owner(
+    tmp_path, monkeypatch, unexpected_owner_for
+):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _executable(bin_dir / "node-24", "v24.18.1")
+    for alias in ("npm", "npx"):
+        script = bin_dir / f"{alias}-cli.js"
+        script.write_text("#!/usr/bin/node\n")
+        script.chmod(0o755)
+        (bin_dir / alias).symlink_to(script)
+    monkeypatch.setattr("gorget.toolchain._RPM_BINDIR", bin_dir)
+    monkeypatch.setattr("gorget.toolchain._rpm_owned", lambda path: True)
+    monkeypatch.setattr(
+        "gorget.toolchain._rpm_package_name",
+        lambda path: (
+            "unrelated" if path.name == unexpected_owner_for
+            else "nodejs24" if path.name == "node-24"
+            else "npm12"
+        ),
+    )
+
+    expected = (
+        "expected nodejs24 RPM"
+        if unexpected_owner_for == "node-24"
+        else f"RPM-owned standalone {unexpected_owner_for.split('-')[0]} JS CLI"
+    )
+    with pytest.raises(GorgetConfigError, match=expected):
+        with activate([ToolchainEntry(name="node", version="24")]):
+            pass
 
 
 @pytest.mark.parametrize("missing", ["npm-24", "npx-24"])
