@@ -222,6 +222,59 @@ def test_activate_selects_installed_node_rpm_binaries(tmp_path, monkeypatch):
     assert os.environ["PATH"] == str(bin_dir)
 
 
+def test_activate_runs_standalone_npm_with_selected_node(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _executable(bin_dir / "node", "v22.0.0")
+    node_24 = bin_dir / "node-24"
+    node_24.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo v24.18.1; '
+        'else printf "node-24:%s:%s\\n" "$1" "$2"; fi\n'
+    )
+    node_24.chmod(0o755)
+    for alias in ("npm", "npx"):
+        script = bin_dir / f"{alias}-cli.js"
+        script.write_text("#!/usr/bin/node\n")
+        script.chmod(0o755)
+        (bin_dir / alias).symlink_to(script)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setattr("gorget.toolchain._RPM_BINDIR", bin_dir)
+    monkeypatch.setattr("gorget.toolchain._rpm_owned", lambda path: True)
+
+    entries = [ToolchainEntry(name="node", version="24")]
+    with activate(entries):
+        for alias in ("npm", "npx"):
+            result = subprocess.run(
+                ["/usr/bin/env", alias, "--version"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert result.stdout == f"node-24:{bin_dir / alias}:--version\n"
+        verify_installed(entries)
+
+    assert os.environ["PATH"] == str(bin_dir)
+
+
+def test_activate_rejects_non_rpm_standalone_npm_script(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _executable(bin_dir / "node-24", "v24.18.1")
+    script = bin_dir / "npm-cli.js"
+    script.write_text("#!/usr/bin/node\n")
+    script.chmod(0o755)
+    (bin_dir / "npm").symlink_to(script)
+    monkeypatch.setattr("gorget.toolchain._RPM_BINDIR", bin_dir)
+    monkeypatch.setattr(
+        "gorget.toolchain._rpm_owned", lambda path: path.name != "npm-cli.js"
+    )
+
+    with pytest.raises(GorgetConfigError, match="RPM-owned standalone npm JS CLI"):
+        with activate([ToolchainEntry(name="node", version="24")]):
+            pass
+
+
 @pytest.mark.parametrize("missing", ["npm-24", "npx-24"])
 def test_activate_rejects_partial_node_rpm_toolchain(tmp_path, monkeypatch, missing):
     bin_dir = tmp_path / "bin"
