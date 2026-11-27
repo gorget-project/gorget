@@ -47,6 +47,8 @@ _VERSION_CHECKS: dict[str, tuple[list[str], re.Pattern[str]]] = {
 }
 _DECLARED_VERSION = re.compile(r"\d+(?:\.\d+)*")
 _RPM_BINDIR = Path("/usr/bin")
+# Changing npm major requires an explicit review of the CI image's RPM contents.
+_STANDALONE_NPM_PACKAGE = "npm12"
 
 
 def _parse_declared_version(entry: ToolchainEntry, value: object, field: str) -> list[str]:
@@ -73,6 +75,20 @@ def _rpm_owned(path: Path) -> bool:
     return result.returncode == 0
 
 
+def _rpm_package_name(path: Path) -> str | None:
+    """Return the exact package owning a file, without trusting the caller's PATH."""
+    try:
+        result = run(
+            [str(_RPM_BINDIR / "rpm"), "-q", "--queryformat", "%{NAME}\n", "-f", str(path)]
+        )
+    except FileNotFoundError:
+        return None
+    names = result.stdout.splitlines()
+    if result.returncode != 0 or len(names) != 1 or not names[0]:
+        return None
+    return names[0]
+
+
 def _installed_rpm_binary(name: str) -> str | None:
     path = _RPM_BINDIR / name
     if not path.is_file() or not os.access(path, os.X_OK):
@@ -88,14 +104,22 @@ def _installed_rpm_node_script(name: str) -> str | None:
     binary = _installed_rpm_binary(name)
     if binary is None:
         return None
-    script = Path(binary).resolve()
-    if script.suffix not in {".js", ".mjs", ".cjs"} or not _rpm_owned(script):
+    try:
+        script = Path(binary).resolve(strict=True)
+    except (OSError, RuntimeError):
         return None
-    return binary
+    if (
+        script.suffix not in {".js", ".mjs", ".cjs"}
+        or not _rpm_owned(script)
+        or _rpm_package_name(Path(binary)) != _STANDALONE_NPM_PACKAGE
+        or _rpm_package_name(script) != _STANDALONE_NPM_PACKAGE
+    ):
+        return None
+    return str(script)
 
 
 def _versioned_aliases(entry: ToolchainEntry) -> dict[str, tuple[str, ...]]:
-    """Return PATH aliases backed by installed, distinctly named RPM binaries."""
+    """Return PATH aliases backed by installed RPM toolchains."""
     version_parts = _version_parts(entry)
 
     if entry.name == "node":
@@ -120,6 +144,10 @@ def _versioned_aliases(entry: ToolchainEntry) -> dict[str, tuple[str, ...]]:
             # Standalone npm RPMs provide unversioned JS entry points. Invoke
             # them with the selected Node: their absolute shebang may name a
             # different Node version than this pipeline requested.
+            if _rpm_package_name(Path(node)) != f"nodejs{suffix}":
+                raise GorgetConfigError(
+                    f"node-{suffix} is not owned by the expected nodejs{suffix} RPM"
+                )
             for alias in ("npm", "npx"):
                 script = _installed_rpm_node_script(alias)
                 if script is None:

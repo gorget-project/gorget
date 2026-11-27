@@ -552,9 +552,13 @@ Declares per-package tool version requirements for `vendor`/`vendor-bump`/
 `run` steps. Before any stage runs (even under `--dry-run`),
 gorget activates an installed RPM-native version when the distribution exposes
 one through a distinctly named executable, then validates it. Node.js uses
-`node-<major>` (and matching `npm-<major>`/`npx-<major>` when installed); Python
-uses `python<major>.<minor>`. The temporary aliases apply to the entire pipeline,
-including child scripts that use `/usr/bin/env`, and are removed afterward.
+`node-<major>` and matching `npm-<major>`/`npx-<major>` when installed. When
+versioned npm executables are absent, it accepts the standalone `npm12` RPM's
+JavaScript entry points only if both npm links and their resolved scripts belong
+to `npm12` and `node-<major>` belongs to `nodejs<major>`. Gorget runs those
+scripts with the selected Node binary. Python uses `python<major>.<minor>`.
+The temporary aliases apply to the entire pipeline, including child scripts
+that use `/usr/bin/env`, and are removed afterward.
 
 Other tools currently validate the ambient executable (e.g. `go version`).
 Version matching is component-wise (`1.22` matches `1.22.3`), and a mismatch or
